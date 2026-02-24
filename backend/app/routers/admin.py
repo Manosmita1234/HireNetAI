@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-import io
 
 from app.database import get_database
 from app.utils.auth import require_admin
@@ -124,7 +123,6 @@ async def download_report(
         )
         answers.append(ans)
 
-    from datetime import datetime
     session = InterviewSession(
         id=doc["id"],
         candidate_id=doc.get("candidate_id", ""),

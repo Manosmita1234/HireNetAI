@@ -7,8 +7,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
 from app.database import get_database
-from app.models.interview import InterviewSession, Answer
-from app.schemas.interview import StartSessionResponse, SessionDetail, AnswerDetail
+from app.models.interview import InterviewSession
+from app.schemas.interview import StartSessionResponse
 from app.utils.auth import get_current_user
 from app.utils.helpers import mongo_doc_to_dict
 

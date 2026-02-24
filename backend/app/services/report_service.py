@@ -9,7 +9,7 @@ Generates a full candidate evaluation PDF including:
 
 import io
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, List
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -24,7 +24,6 @@ from reportlab.platypus import (
     HRFlowable,
     PageBreak,
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 from app.models.interview import InterviewSession
 
@@ -109,9 +108,9 @@ def generate_pdf_report(session: InterviewSession) -> bytes:
     verdict_color = _verdict_color(session.category)
     score_data = [
         [
-            Paragraph(f"<b>Final Score</b>", bold),
+            Paragraph("<b>Final Score</b>", bold),
             Paragraph(f"<b>{session.final_score} / 10</b>", bold),
-            Paragraph(f"<b>Recommendation</b>", bold),
+            Paragraph("<b>Recommendation</b>", bold),
             Paragraph(f'<font color="#{verdict_color.hexval()[1:]}">{session.category}</font>', bold),
         ]
     ]

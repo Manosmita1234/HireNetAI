@@ -9,7 +9,6 @@ Pipeline:
 """
 
 import asyncio
-from pathlib import Path
 from typing import Dict, List, Any
 
 from app.config import get_settings

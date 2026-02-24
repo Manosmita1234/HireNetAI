@@ -8,9 +8,7 @@ Flow:
   4. Fire-and-forget: run full processing pipeline in background
 """
 
-import asyncio
 import shutil
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, BackgroundTasks
 from motor.motor_asyncio import AsyncIOMotorDatabase

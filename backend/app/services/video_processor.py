@@ -21,8 +21,7 @@ from bson import ObjectId
 
 from app.config import get_settings
 from app.services import whisper_service, emotion_service, llm_service, scoring_service
-from app.models.interview import Answer, WordTimestamp, FrameEmotion, LLMEvaluation
-from app.utils.helpers import str_to_object_id
+from app.models.interview import Answer, LLMEvaluation
 
 settings = get_settings()
 
@@ -128,8 +127,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
     After all answers are processed, compute the aggregate session score
     and mark the session as 'completed'.
     """
-    from app.models.interview import InterviewSession, Answer
-    from app.utils.helpers import mongo_doc_to_dict
+    from app.models.interview import Answer
 
     doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
     if not doc:

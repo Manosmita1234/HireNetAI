@@ -5,7 +5,6 @@ Sends (question + transcript) to an OpenAI-compatible chat model and
 parses the structured JSON response into an LLMEvaluation object.
 """
 
-import asyncio
 import json
 import re
 from typing import Any, Dict

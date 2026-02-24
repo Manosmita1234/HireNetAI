@@ -8,10 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database import get_database
-from app.models.user import UserInDB, UserRole
+from app.models.user import UserInDB
 from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse
 from app.utils.auth import create_access_token, hash_password, verify_password
-from app.utils.helpers import mongo_doc_to_dict
 from app.config import get_settings
 
 settings = get_settings()

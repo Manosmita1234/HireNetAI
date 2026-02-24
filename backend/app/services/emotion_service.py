@@ -8,8 +8,6 @@ Pipeline:
 """
 
 import asyncio
-import os
-from pathlib import Path
 from typing import Dict, List, Any
 
 import cv2
@@ -64,7 +62,7 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
                         "emotion_scores": {k: round(v, 2) for k, v in emotions.items()},
                     }
                 )
-            except Exception as e:
+            except Exception:
                 # If face not detected in frame, skip silently
                 pass
 

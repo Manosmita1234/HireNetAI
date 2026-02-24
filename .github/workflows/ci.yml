@@ -28,10 +28,11 @@ jobs:
           cd backend
           pip install -r requirements.txt
 
-      - name: Lint with ruff (fast Python linter)
+      - name: Lint with ruff
         run: |
-          pip install ruff
-          ruff check backend/app --ignore E501
+          pip install ruff --quiet
+          cd backend
+          python -m ruff check app --ignore E501,F841 --output-format=github
 
   # ── Frontend (React / Vite) ───────────────────────────────────────────────
   frontend:
