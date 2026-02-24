@@ -7,7 +7,6 @@ Starts the app, registers routers, handles CORS, and manages DB lifecycle.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import connect_db, close_db
