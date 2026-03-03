@@ -36,6 +36,19 @@ class Settings(BaseSettings):
     # ── CORS ─────────────────────────────────────────────────────────────────
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # ── Email / SMTP (optional – leave blank to use console-only dev mode) ──
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+
+    # ── App URLs ─────────────────────────────────────────────────────────────
+    frontend_url: str = "http://localhost:5173"
+
+    # ── Password Reset ────────────────────────────────────────────────────────
+    reset_token_expire_minutes: int = 60  # 1 hour
+
     @property
     def origins_list(self) -> List[str]:
         return [o.strip() for o in self.allowed_origins.split(",")]

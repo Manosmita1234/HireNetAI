@@ -124,16 +124,21 @@ async def process_video(
 
 async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
     """
-    After all answers are processed, compute the aggregate session score
-    and mark the session as 'completed'.
+    After all answers are processed:
+      1. Compute aggregate session score and mark session 'completed'.
+      2. Run the holistic AI evaluation (all Q&A pairs in one LLM call)
+         and store the result as 'holistic_evaluation' on the session document.
     """
     from app.models.interview import Answer
+    from app.schemas.evaluation import EvaluationRequest, QuestionAnswerInput
+    from app.services.evaluation_service import run_holistic_evaluation
+    from datetime import timezone
 
     doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
     if not doc:
         return
 
-    # Reconstruct Answer objects
+    # ── Step 1: Aggregate per-answer scores ──────────────────────────────────
     raw_answers = doc.get("answers", [])
     answers = []
     for a in raw_answers:
@@ -163,3 +168,53 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
         },
     )
     print(f"[Pipeline] Session {session_id} finalized – {agg}")
+
+    # ── Step 2: Holistic AI evaluation ───────────────────────────────────────
+    print(f"[Pipeline] Session {session_id} – running holistic evaluation …")
+    try:
+        qa_items = []
+        for idx, a in enumerate(raw_answers, start=1):
+            emotion_dist: dict = a.get("emotion_distribution", {})
+            if emotion_dist:
+                dominant = max(emotion_dist, key=emotion_dist.get)
+                emotion_summary = f"{dominant} ({emotion_dist[dominant]:.0%})"
+            else:
+                emotion_summary = ""
+
+            conf_idx: float = a.get("confidence_index", 0.0)
+            conf_str = "high" if conf_idx >= 7 else ("medium" if conf_idx >= 4 else "low")
+
+            qa_items.append(
+                QuestionAnswerInput(
+                    question_id=idx,
+                    question_text=a.get("question_text", f"Question {idx}"),
+                    answer_text=a.get("transcript") or "",
+                    emotion_summary=emotion_summary,
+                    confidence_indicator=conf_str,
+                )
+            )
+
+        eval_request = EvaluationRequest(
+            candidate_name=doc.get("candidate_name", "Unknown"),
+            role_applied=doc.get("role_applied", "Not specified"),
+            questions=qa_items,
+        )
+
+        holistic = await run_holistic_evaluation(eval_request)
+
+        await db["sessions"].update_one(
+            {"_id": ObjectId(session_id)},
+            {
+                "$set": {
+                    "holistic_evaluation": holistic.model_dump(),
+                    "holistic_evaluated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+        print(
+            f"[Pipeline] Session {session_id} – holistic eval done "
+            f"(score={holistic.overall_score}, decision={holistic.decision})"
+        )
+
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Pipeline] WARNING: Holistic evaluation failed for {session_id}: {exc}")

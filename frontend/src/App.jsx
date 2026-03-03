@@ -9,6 +9,8 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import CandidateDashboard from './pages/CandidateDashboard'
 import InterviewRoom from './pages/InterviewRoom'
 import AdminDashboard from './pages/AdminDashboard'
@@ -38,6 +40,8 @@ function AppRoutes() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
             <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Candidate */}
             <Route path="/candidate/dashboard" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
