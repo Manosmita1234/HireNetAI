@@ -26,6 +26,30 @@ async def get_questions(db: AsyncIOMotorDatabase = Depends(get_database)):
     return {"questions": questions}
 
 
+@router.get("/session/{session_id}/questions")
+async def get_session_questions(
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Return questions for a specific session (tailored or global fallback)."""
+    # Check session-specific tailored questions first
+    cursor = db["session_questions"].find({"session_id": session_id}).sort("order", 1)
+    questions = []
+    async for doc in cursor:
+        doc = mongo_doc_to_dict(doc)
+        questions.append(doc)
+
+    # Fall back to global question bank if no tailored questions exist
+    if not questions:
+        cursor = db["questions"].find({})
+        async for doc in cursor:
+            doc = mongo_doc_to_dict(doc)
+            questions.append(doc)
+
+    return {"questions": questions}
+
+
 @router.post("/session/start", response_model=StartSessionResponse, status_code=201)
 async def start_session(
     current_user: dict = Depends(get_current_user),

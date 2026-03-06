@@ -12,6 +12,7 @@ import SignupPage from './pages/SignupPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import CandidateDashboard from './pages/CandidateDashboard'
+import ResumeUploadPage from './pages/ResumeUploadPage'
 import InterviewRoom from './pages/InterviewRoom'
 import AdminDashboard from './pages/AdminDashboard'
 import CandidateDetail from './pages/CandidateDetail'
@@ -45,6 +46,7 @@ function AppRoutes() {
 
             {/* Candidate */}
             <Route path="/candidate/dashboard" element={<ProtectedRoute><CandidateDashboard /></ProtectedRoute>} />
+            <Route path="/candidate/resume-upload" element={<ProtectedRoute><ResumeUploadPage /></ProtectedRoute>} />
             <Route path="/candidate/interview/:sessionId" element={<ProtectedRoute><InterviewRoom /></ProtectedRoute>} />
             <Route path="/candidate/results/:sessionId" element={<ProtectedRoute><CandidateResults /></ProtectedRoute>} />
 

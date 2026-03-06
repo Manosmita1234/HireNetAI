@@ -1,0 +1,114 @@
+{
+  "_comment": "Sample HireNetAI interview session – illustrates the full MongoDB document structure.",
+  "id": "64f3c2b1a4e5f8c9d0123456",
+  "candidate_id": "64f3c1a0b3d4e7f8a9012345",
+  "candidate_name": "Priya Sharma",
+  "candidate_email": "priya.sharma@example.com",
+  "role_applied": "Senior Software Engineer",
+  "status": "completed",
+  "final_score": 7.4,
+  "category": "Recommended",
+  "started_at": "2025-03-05T10:00:00Z",
+  "completed_at": "2025-03-05T10:22:00Z",
+  "answers": [
+    {
+      "question_id": "q1_abc123",
+      "question_text": "Tell me about yourself and your professional background.",
+      "video_path": "app/uploads/64f3c2b1a4e5f8c9d0123456/q1_abc123.webm",
+      "audio_path": "app/uploads/64f3c2b1a4e5f8c9d0123456/q1_abc123.wav",
+      "transcript": "I am a senior software engineer with 7 years of experience, primarily in Python and distributed systems. I've led teams of up to 6 engineers and have shipped multiple high-traffic services at scale.",
+      "word_timestamps": [
+        {"word": "I",       "start": 0.12, "end": 0.20, "score": 0.99},
+        {"word": "am",      "start": 0.25, "end": 0.40, "score": 0.98},
+        {"word": "a",       "start": 0.45, "end": 0.52, "score": 0.97}
+      ],
+      "frame_emotions": [
+        {"timestamp": 0.0, "dominant_emotion": "neutral", "emotion_scores": {"neutral": 0.72, "happy": 0.15, "surprise": 0.08, "fear": 0.03, "sad": 0.02}},
+        {"timestamp": 1.0, "dominant_emotion": "happy",   "emotion_scores": {"neutral": 0.30, "happy": 0.62, "surprise": 0.05, "fear": 0.01, "sad": 0.02}}
+      ],
+      "emotion_distribution": {"neutral": 0.60, "happy": 0.30, "surprise": 0.07, "fear": 0.02, "sad": 0.01},
+      "confidence_index": 7.2,
+      "nervousness_score": 1.5,
+      "pause_count": 1,
+      "long_pauses": [
+        {"after_word": "scale", "before_word": "I", "duration": 2.1, "at_time": 12.4}
+      ],
+      "hesitation_score": 1.5,
+      "llm_evaluation": {
+        "clarity_score": 8,
+        "confidence_score": 7,
+        "logic_score": 8,
+        "relevance_score": 9,
+        "communication_level": "High",
+        "personality_traits": {
+          "leadership": 8,
+          "emotional_stability": 7,
+          "honesty": 9,
+          "confidence": 7
+        },
+        "strengths": ["Clear articulation of experience", "Quantified team size and impact", "Relevant technical background"],
+        "weaknesses": ["Could elaborate on recent projects"],
+        "overall_score": 8,
+        "final_verdict": "Highly Recommended",
+        "reasoning": "The candidate gave a well-structured and confident introduction. Their answer was directly relevant and covered years of experience, leadership, and technical stack clearly."
+      },
+      "answer_final_score": 7.74,
+      "processed": true,
+      "created_at": "2025-03-05T10:01:32Z"
+    },
+    {
+      "question_id": "q2_def456",
+      "question_text": "Describe a challenging situation you faced at work. How did you handle it?",
+      "video_path": "app/uploads/64f3c2b1a4e5f8c9d0123456/q2_def456.webm",
+      "audio_path": "app/uploads/64f3c2b1a4e5f8c9d0123456/q2_def456.wav",
+      "transcript": "We had a major database outage in production at peak traffic. I immediately formed a war room, triaged the root cause — a missed migration — and coordinated the rollback. We restored service in 40 minutes and I published a post-mortem.",
+      "word_timestamps": [],
+      "frame_emotions": [],
+      "emotion_distribution": {"neutral": 0.50, "happy": 0.20, "surprise": 0.15, "fear": 0.10, "sad": 0.05},
+      "confidence_index": 6.8,
+      "nervousness_score": 2.4,
+      "pause_count": 0,
+      "long_pauses": [],
+      "hesitation_score": 0.0,
+      "llm_evaluation": {
+        "clarity_score": 9,
+        "confidence_score": 8,
+        "logic_score": 9,
+        "relevance_score": 9,
+        "communication_level": "High",
+        "personality_traits": {
+          "leadership": 9,
+          "emotional_stability": 8,
+          "honesty": 9,
+          "confidence": 8
+        },
+        "strengths": ["Strong STAR structure", "Shows leadership under pressure", "Outcome-focused"],
+        "weaknesses": [],
+        "overall_score": 9,
+        "final_verdict": "Highly Recommended",
+        "reasoning": "Excellent use of STAR. The candidate demonstrated leadership, root-cause analysis, and measurable resolution. A standout answer."
+      },
+      "answer_final_score": 8.16,
+      "processed": true,
+      "created_at": "2025-03-05T10:07:10Z"
+    }
+  ],
+  "holistic_evaluation": {
+    "overall_score": 82,
+    "technical_score": 85,
+    "communication_score": 88,
+    "consistency_score": 84,
+    "decision": "Selected",
+    "strengths": [
+      "Consistent use of STAR methodology",
+      "Strong technical and leadership narrative",
+      "Clear and articulate communication throughout"
+    ],
+    "weaknesses": [
+      "Could provide more quantified project outcomes",
+      "Slight hesitation in self-introduction"
+    ],
+    "final_summary": "Priya demonstrated a strong alignment between her experience and the Senior Software Engineer role. Across all answers she maintained high clarity, structured reasoning, and evidence-based examples. Her leadership and incident-response capabilities are above average. Recommended to proceed to the technical panel round."
+  },
+  "holistic_evaluated_at": "2025-03-05T10:23:45Z"
+}

@@ -173,10 +173,9 @@ export default function CandidateResults() {
 
                                                 {/* Scores row */}
                                                 {llm && (
-                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                                         {[
                                                             { label: 'Clarity', val: llm.clarity_score },
-                                                            { label: 'Confidence', val: llm.confidence_score },
                                                             { label: 'Logic', val: llm.logic_score },
                                                             { label: 'Relevance', val: llm.relevance_score },
                                                         ].map(({ label, val }) => (
@@ -233,16 +232,8 @@ export default function CandidateResults() {
                                                     </div>
                                                 )}
 
-                                                {/* Emotion + hesitation */}
+                                                {/* Answer score */}
                                                 <div className="flex gap-4 text-sm">
-                                                    <div className="glass rounded-xl px-4 py-2">
-                                                        <p className="text-brand-400 text-xs">Confidence Index</p>
-                                                        <p className="font-semibold">{(answer.confidence_index * 100)?.toFixed(0)}%</p>
-                                                    </div>
-                                                    <div className="glass rounded-xl px-4 py-2">
-                                                        <p className="text-brand-400 text-xs">Hesitation Score</p>
-                                                        <p className="font-semibold">{answer.hesitation_score?.toFixed(1)}/10</p>
-                                                    </div>
                                                     <div className="glass rounded-xl px-4 py-2">
                                                         <p className="text-brand-400 text-xs">Answer Score</p>
                                                         <p className="font-semibold">{answer.answer_final_score?.toFixed(1)}/10</p>

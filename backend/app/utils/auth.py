@@ -74,3 +74,19 @@ def require_candidate(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user.get("role") != "candidate":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Candidate access required")
     return current_user
+
+
+# ── Optional auth (returns None if no/invalid token) ─────────────────────────
+bearer_scheme_optional = HTTPBearer(auto_error=False)
+
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme_optional),
+) -> Optional[dict]:
+    """Like get_current_user but returns None instead of raising 401."""
+    if not credentials:
+        return None
+    try:
+        return decode_token(credentials.credentials)
+    except Exception:
+        return None

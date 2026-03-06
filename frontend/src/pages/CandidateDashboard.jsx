@@ -2,9 +2,9 @@
  * pages/CandidateDashboard.jsx – Candidate home showing past sessions + start button.
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { Brain, Play, Clock, CheckCircle, Loader, LogOut, BarChart3, Eye } from 'lucide-react'
 import { interviewAPI } from '../services/api'
@@ -28,7 +28,14 @@ export default function CandidateDashboard() {
     const navigate = useNavigate()
     const [sessions, setSessions] = useState([])
     const [loading, setLoading] = useState(true)
-    const [starting, setStarting] = useState(false)
+
+    // ── Resume upload state ───────────────────────────────────────────────────
+    const [file, setFile] = useState(null)
+    const [dragging, setDragging] = useState(false)
+    const [uploadStatus, setUploadStatus] = useState('idle') // idle | uploading | done
+    const [sessionId, setSessionId] = useState(null)
+    const [skillsDetected, setSkillsDetected] = useState([])  // from backend
+    const fileInputRef = useRef(null)
 
     const fetchSessions = useCallback(() => {
         interviewAPI.getMySessions()
@@ -37,11 +44,8 @@ export default function CandidateDashboard() {
             .finally(() => setLoading(false))
     }, [])
 
-    useEffect(() => {
-        fetchSessions()
-    }, [fetchSessions])
+    useEffect(() => { fetchSessions() }, [fetchSessions])
 
-    // Poll every 8s while any session is still processing
     useEffect(() => {
         const hasProcessing = sessions.some(s => s.status === 'processing' || s.status === 'in_progress')
         if (!hasProcessing) return
@@ -49,16 +53,56 @@ export default function CandidateDashboard() {
         return () => clearInterval(id)
     }, [sessions, fetchSessions])
 
-    const startInterview = async () => {
-        setStarting(true)
+    // ── Upload helper ─────────────────────────────────────────────────────────
+    const uploadResume = async (f) => {
+        if (!f) return
+        setUploadStatus('uploading')
         try {
-            const { data } = await interviewAPI.startSession()
-            navigate(`/candidate/interview/${data.session_id}`)
+            const { resumeAPI } = await import('../services/api')
+            const formData = new FormData()
+            formData.append('resume', f)
+            const { data } = await resumeAPI.uploadResume(formData)
+            setSessionId(data.session_id)
+            setSkillsDetected(data.skills_detected || [])
+            setUploadStatus('done')
+            toast.success(`${data.skills_detected?.length || 0} skills detected · ${data.questions_count} questions ready!`)
         } catch (err) {
-            toast.error('Failed to start interview')
-        } finally {
-            setStarting(false)
+            setUploadStatus('idle')
+            toast.error(err.response?.data?.detail || 'Upload failed. Please try again.')
         }
+    }
+
+    const handleFileInput = (e) => {
+        const picked = e.target.files?.[0]
+        if (!picked) return
+        const ext = picked.name.toLowerCase()
+        if (!ext.endsWith('.pdf') && !ext.endsWith('.docx') && !ext.endsWith('.doc')) {
+            toast.error('Only PDF or DOCX files are accepted.')
+            return
+        }
+        if (picked.size > 10 * 1024 * 1024) { toast.error('File must be under 10 MB.'); return }
+        setFile(picked); setUploadStatus('idle'); setSessionId(null); setSkillsDetected([])
+        uploadResume(picked)
+    }
+
+    const handleDrop = useCallback(async (e) => {
+        e.preventDefault(); setDragging(false)
+        const picked = e.dataTransfer.files?.[0]
+        if (!picked) return
+        const ext = picked.name.toLowerCase()
+        if (!ext.endsWith('.pdf') && !ext.endsWith('.docx') && !ext.endsWith('.doc')) {
+            toast.error('Only PDF or DOCX files are accepted.')
+            return
+        }
+        if (picked.size > 10 * 1024 * 1024) { toast.error('File must be under 10 MB.'); return }
+        setFile(picked); setUploadStatus('idle'); setSessionId(null); setSkillsDetected([])
+        uploadResume(picked)
+    }, [])
+
+    const resetUpload = (e) => {
+        e.stopPropagation()
+        setFile(null); setUploadStatus('idle'); setSessionId(null); setSkillsDetected([])
+        if (fileInputRef.current) fileInputRef.current.value = ''
     }
 
     return (
@@ -86,27 +130,99 @@ export default function CandidateDashboard() {
                 {/* Header */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
                     <h1 className="text-3xl font-bold mb-2">Your Interview Dashboard</h1>
-                    <p className="text-brand-300">Ready to showcase your skills? Start a new AI-powered interview below.</p>
+                    <p className="text-brand-300">Upload your resume to get personalised questions, then begin your AI-powered interview.</p>
                 </motion.div>
 
-                {/* Start CTA */}
+                {/* ── Start CTA with inline resume upload ── */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-                    className="glass rounded-2xl p-8 mb-8 neon-border bg-gradient-to-r from-brand-950/60 to-purple-950/40 text-center"
+                    className="glass rounded-2xl p-8 mb-8 neon-border bg-gradient-to-r from-brand-950/60 to-purple-950/40"
                 >
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
-                        <Play className="w-8 h-8 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-bold mb-2">Start a New Interview</h2>
-                    <p className="text-brand-300 mb-6 text-sm max-w-md mx-auto">
-                        You'll answer a series of questions on camera. Our AI will analyze your speech,
-                        facial expressions, and communication skills in real-time.
+                    <h2 className="text-2xl font-bold mb-1 text-center">Start a New Interview</h2>
+                    <p className="text-brand-300 text-sm text-center mb-6 max-w-md mx-auto">
+                        Our AI reads your resume and crafts&nbsp;
+                        <span className="text-brand-200 font-semibold">5 personalised questions</span>
+                        &nbsp;based on your skills and experience.
                     </p>
-                    <button onClick={startInterview} disabled={starting}
-                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 disabled:opacity-50 px-8 py-3 rounded-xl font-semibold transition-all duration-300 hover:scale-105">
-                        {starting
-                            ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Starting…</>
-                            : <><Play className="w-4 h-4" /> Begin Interview</>}
-                    </button>
+
+                    {/* Drop zone */}
+                    <div
+                        onDrop={handleDrop}
+                        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                        onDragLeave={() => setDragging(false)}
+                        onClick={() => (uploadStatus === 'idle') && fileInputRef.current?.click()}
+                        className={`
+                            relative rounded-xl border-2 border-dashed transition-all duration-300 mb-5
+                            flex flex-col items-center justify-center gap-3 py-8 px-6
+                            ${dragging ? 'border-brand-400 bg-brand-900/30 scale-[1.01]' :
+                                uploadStatus === 'done' ? 'border-emerald-500/60 bg-emerald-950/20 cursor-default' :
+                                    uploadStatus === 'uploading' ? 'border-brand-600/60 bg-brand-950/20 cursor-default' :
+                                        'border-brand-700/60 hover:border-brand-500 hover:bg-brand-950/20 cursor-pointer'}
+                        `}
+                    >
+                        <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            className="hidden" onChange={handleFileInput} />
+
+                        <AnimatePresence mode="wait">
+                            {uploadStatus === 'done' ? (
+                                <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                                    className="flex flex-col items-center gap-3 text-center w-full">
+                                    <CheckCircle className="w-9 h-9 text-emerald-400" />
+                                    <p className="text-emerald-300 font-semibold">Resume analysed!</p>
+                                    <p className="text-brand-400 text-xs truncate max-w-xs">{file?.name}</p>
+
+                                    {/* Detected skills badges */}
+                                    {skillsDetected.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 justify-center max-w-lg mt-1">
+                                            {skillsDetected.map((skill) => (
+                                                <span key={skill}
+                                                    className="text-xs px-2.5 py-1 rounded-full bg-brand-800/60 border border-brand-600/40 text-brand-200 font-medium">
+                                                    {skill}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <button onClick={resetUpload}
+                                        className="text-xs text-brand-400 hover:text-brand-200 underline mt-1">
+                                        Change file
+                                    </button>
+                                </motion.div>
+                            ) : uploadStatus === 'uploading' ? (
+                                <motion.div key="uploading" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                    className="flex flex-col items-center gap-3">
+                                    <span className="w-9 h-9 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin" />
+                                    <p className="text-brand-300 text-sm font-medium">Analysing your resume…</p>
+                                    <p className="text-brand-500 text-xs truncate max-w-xs">{file?.name}</p>
+                                </motion.div>
+                            ) : (
+                                <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                    className="flex flex-col items-center gap-2 text-center">
+                                    <div className="w-12 h-12 rounded-xl bg-brand-800/50 flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-brand-200 font-medium">Drag &amp; drop your resume here</p>
+                                    <p className="text-brand-400 text-sm">or click to browse · PDF or DOCX · max 10 MB</p>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Begin Interview button */}
+                    <div className="flex flex-col items-center gap-2">
+                        <button
+                            onClick={() => sessionId && navigate(`/candidate/interview/${sessionId}`)}
+                            disabled={!sessionId}
+                            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed px-10 py-3 rounded-xl font-semibold transition-all duration-300 hover:scale-105 disabled:hover:scale-100"
+                        >
+                            <Play className="w-4 h-4" /> Begin Interview
+                        </button>
+                        {!sessionId && (
+                            <p className="text-brand-500 text-xs">Upload your resume above to unlock</p>
+                        )}
+                    </div>
                 </motion.div>
 
                 {/* Past sessions */}

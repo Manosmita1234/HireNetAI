@@ -137,11 +137,9 @@ function AnswerCard({ answer, sessionId, index }) {
                     </div>
 
                     {/* Metrics row */}
-                    <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="grid grid-cols-1 gap-3 text-center">
                         {[
-                            { label: 'Confidence', value: answer.confidence_index?.toFixed(1) },
                             { label: 'Nervousness', value: answer.nervousness_score?.toFixed(1) },
-                            { label: 'Hesitation', value: answer.hesitation_score?.toFixed(1) },
                         ].map(m => (
                             <div key={m.label} className="glass rounded-xl p-3 bg-surface-card/20">
                                 <p className="text-2xl font-bold gradient-text">{m.value}</p>
@@ -178,7 +176,6 @@ function AnswerCard({ answer, sessionId, index }) {
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div>
                                     <ScoreBar label="Clarity" value={ev.clarity_score} />
-                                    <ScoreBar label="Confidence" value={ev.confidence_score} />
                                     <ScoreBar label="Logic" value={ev.logic_score} />
                                     <ScoreBar label="Relevance" value={ev.relevance_score} />
                                     <ScoreBar label="Overall" value={ev.overall_score} />

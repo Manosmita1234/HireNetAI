@@ -1,0 +1,19 @@
+{
+  "_comment": "Example HolisticEvaluationResult returned by evaluation_service.run_holistic_evaluation(). All scores are 0-100 integers. Demonstrates a 'Borderline' candidate case.",
+  "overall_score": 64,
+  "technical_score": 58,
+  "communication_score": 70,
+  "consistency_score": 65,
+  "decision": "Borderline",
+  "strengths": [
+    "Good communication skills and clear verbal articulation",
+    "Demonstrated awareness of team dynamics and collaboration",
+    "Showed genuine enthusiasm for the role and company mission"
+  ],
+  "weaknesses": [
+    "Technical answers lacked depth and specific examples",
+    "Occasional hesitation when discussing past achievements",
+    "Inconsistent use of structured reasoning (STAR) across answers"
+  ],
+  "final_summary": "The candidate shows solid interpersonal and communication skills but fell short on technical depth for a senior-level position. Their behavioural answers were structured and relevant, but technical responses revealed gaps in system design knowledge. Recommend a technical screening call focused on distributed systems and scalability before making a final hiring decision."
+}

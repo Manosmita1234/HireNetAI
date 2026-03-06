@@ -42,6 +42,7 @@ export const authAPI = {
 // ── Interview ─────────────────────────────────────────────────────────────────
 export const interviewAPI = {
     getQuestions: () => api.get('/interview/questions'),
+    getSessionQuestions: (sessionId) => api.get(`/interview/session/${sessionId}/questions`),
     startSession: () => api.post('/interview/session/start'),
     completeSession: (sessionId) => api.post(`/interview/session/${sessionId}/complete`),
     getMySessions: () => api.get('/interview/my-sessions'),
@@ -57,6 +58,15 @@ export const uploadAPI = {
         }),
     getStatus: (sessionId, questionId) =>
         api.get(`/upload/status/${sessionId}/${questionId}`),
+}
+
+// ── Resume ────────────────────────────────────────────────────────────────────
+export const resumeAPI = {
+    uploadResume: (formData) =>
+        api.post('/resume/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 120000,   // 2 min – AI question generation can take time
+        }),
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

@@ -41,7 +41,7 @@ export default function InterviewRoom() {
 
     // ── Load questions + request camera permission ───────────────────────────
     useEffect(() => {
-        interviewAPI.getQuestions()
+        interviewAPI.getSessionQuestions(sessionId)
             .then(({ data }) => setQuestions(data.questions || []))
             .catch(() => toast.error('Failed to load questions'))
 
