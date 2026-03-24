@@ -1,11 +1,22 @@
 """
-services/whisper_service.py – Speech-to-text and word-alignment using WhisperX.
+services/whisper_service.py – Speech-to-text transcription and hesitation analysis using WhisperX.
 
-Pipeline:
-  1. Load WhisperX model (cached after first load)
-  2. Transcribe audio → segments
-  3. Align segments to get word-level timestamps
-  4. Detect long pauses (>2 s) between words
+WhisperX is an enhanced version of OpenAI's Whisper speech recognition model.
+It adds:
+  - Word-level timestamps (exactly when each word was spoken)
+  - Phoneme-level alignment using a separate alignment model
+  - Batch transcription for faster processing
+
+Pipeline per audio file:
+  Step 1: Transcribe audio into text segments (each segment ≈ one sentence)
+  Step 2: Align segments to get per-word start/end timestamps
+  Step 3: Detect long pauses (>2 seconds between words)
+  Step 4: Compute hesitation score (0–10) from the number of pauses
+
+Why run in a thread pool?
+  WhisperX is CPU/GPU bound and blocks the Python thread.
+  FastAPI uses an async event loop, so blocking calls would freeze ALL requests.
+  `run_in_executor` moves blocking code to a thread pool, keeping the event loop free.
 """
 
 import asyncio
@@ -15,22 +26,30 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# WhisperX model is loaded lazily and cached here
-_whisper_model = None
-_align_model_cache: Dict[str, Any] = {}
+# ── Model cache ───────────────────────────────────────────────────────────────
+# WhisperX models are large (~1 GB) and slow to load.
+# We load them once on first use and reuse the same instance for every audio file.
+_whisper_model = None                         # main transcription model
+_align_model_cache: Dict[str, Any] = {}       # alignment model, cached per language (e.g. "en_cpu")
 
 
 def _load_whisper():
-    """Load WhisperX model (runs in thread pool to avoid blocking event loop)."""
+    """
+    Load (or return cached) WhisperX transcription model.
+
+    Called inside the thread pool so the heavy download/load doesn't block the event loop.
+    The `global` keyword lets us modify the module-level _whisper_model variable.
+    """
     import whisperx
 
     global _whisper_model
     if _whisper_model is None:
+        # First load: download (if needed) and initialize the model
         print(f"[Whisper] Loading model '{settings.whisper_model_size}' on {settings.whisper_device} …")
         _whisper_model = whisperx.load_model(
-            settings.whisper_model_size,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
+            settings.whisper_model_size,      # e.g. "base", "small", "medium", "large-v2"
+            device=settings.whisper_device,   # "cpu" or "cuda" (GPU)
+            compute_type=settings.whisper_compute_type,  # "int8" = faster, "float16" = more accurate
         )
         print("[Whisper] Model loaded ✓")
     return _whisper_model
@@ -38,21 +57,35 @@ def _load_whisper():
 
 def _transcribe_sync(audio_path: str) -> Dict[str, Any]:
     """
-    Synchronous WhisperX transcription + word-alignment.
-    Returns a dict with keys: transcript, words, pauses, hesitation_score.
+    Full synchronous WhisperX transcription pipeline.
+
+    This function runs in a background thread (not the event loop) because it
+    blocks on heavy CPU/GPU computation.
+
+    Returns a dict with:
+      transcript      – full text of what the candidate said
+      words           – list of {word, start, end, score} dicts
+      pauses          – list of long pauses detected between words
+      hesitation_score– 0–10 (more pauses → higher hesitation)
+      language        – detected language code (e.g. "en")
     """
     import whisperx
 
     model = _load_whisper()
 
-    # ── Step 1: Transcribe ───────────────────────────────────────────────────
+    # ── Step 1: Transcribe audio → segments ───────────────────────────────────
+    # whisperx.load_audio reads the .wav file into a numpy float32 array
     audio = whisperx.load_audio(audio_path)
+    # batch_size=16 means process 16 audio segments at a time (faster on GPU)
     result = model.transcribe(audio, batch_size=16)
-    language = result.get("language", "en")
+    language = result.get("language", "en")  # WhisperX auto-detects the spoken language
 
-    # ── Step 2: Word-level alignment ─────────────────────────────────────────
-    align_model_key = f"{language}_{settings.whisper_device}"
+    # ── Step 2: Word-level alignment ──────────────────────────────────────────
+    # Alignment maps each word to an exact start/end timestamp in the audio.
+    # The alignment model is language-specific (different model for English vs French etc.)
+    align_model_key = f"{language}_{settings.whisper_device}"  # cache key
     if align_model_key not in _align_model_cache:
+        # Load alignment model for the detected language (cached after first use)
         align_model, metadata = whisperx.load_align_model(
             language_code=language, device=settings.whisper_device
         )
@@ -63,57 +96,55 @@ def _transcribe_sync(audio_path: str) -> Dict[str, Any]:
         result["segments"], align_model, metadata, audio, settings.whisper_device
     )
 
-    # ── Step 3: Extract word timestamps ─────────────────────────────────────
+    # ── Step 3: Extract word-level timestamps ─────────────────────────────────
     words: List[Dict[str, Any]] = []
     full_transcript_parts: List[str] = []
 
     for segment in aligned.get("segments", []):
         full_transcript_parts.append(segment.get("text", "").strip())
         for w in segment.get("words", []):
-            words.append(
-                {
-                    "word": w.get("word", ""),
-                    "start": round(w.get("start", 0.0), 3),
-                    "end": round(w.get("end", 0.0), 3),
-                    "score": round(w.get("score", 1.0), 3),
-                }
-            )
+            words.append({
+                "word":  w.get("word", ""),
+                "start": round(w.get("start", 0.0), 3),  # seconds from start of audio
+                "end":   round(w.get("end",   0.0), 3),
+                "score": round(w.get("score", 1.0), 3),  # confidence score (0–1)
+            })
 
-    full_transcript = " ".join(full_transcript_parts)
+    full_transcript = " ".join(full_transcript_parts)  # join all sentence-level text
 
-    # ── Step 4: Pause / hesitation detection ─────────────────────────────────
-    LONG_PAUSE_THRESHOLD = 2.0   # seconds
+    # ── Step 4: Detect gaps between consecutive words ─────────────────────────
+    LONG_PAUSE_THRESHOLD = 2.0  # any gap > 2 seconds counts as a "long pause"
     pauses: List[Dict[str, float]] = []
 
     for i in range(1, len(words)):
-        gap = words[i]["start"] - words[i - 1]["end"]
+        gap = words[i]["start"] - words[i - 1]["end"]  # silence between previous word's end and current word's start
         if gap > LONG_PAUSE_THRESHOLD:
-            pauses.append(
-                {
-                    "after_word": words[i - 1]["word"],
-                    "before_word": words[i]["word"],
-                    "duration": round(gap, 3),
-                    "at_time": words[i - 1]["end"],
-                }
-            )
+            pauses.append({
+                "after_word":  words[i - 1]["word"],  # word before the pause
+                "before_word": words[i]["word"],       # word after the pause
+                "duration":    round(gap, 3),          # how long the pause was in seconds
+                "at_time":     words[i - 1]["end"],    # timestamp when the pause began
+            })
 
-    # Hesitation score: 0-10, clamped
-    # Formula: number of long pauses × 1.5, capped at 10
+    # Hesitation score formula: each long pause adds 1.5 points (max 10)
+    # e.g. 0 pauses → 0.0, 3 pauses → 4.5, 7+ pauses → 10.0
     hesitation_score = min(len(pauses) * 1.5, 10.0)
 
     return {
-        "transcript": full_transcript,
-        "words": words,
-        "pauses": pauses,
+        "transcript":       full_transcript,
+        "words":            words,
+        "pauses":           pauses,
         "hesitation_score": round(hesitation_score, 2),
-        "language": language,
+        "language":         language,
     }
 
 
 async def transcribe_audio(audio_path: str) -> Dict[str, Any]:
     """
-    Async wrapper: runs blocking WhisperX inference in a thread pool
-    so it doesn't block the FastAPI event loop.
+    Async entry point for transcription.
+    Delegates the blocking _transcribe_sync function to a thread pool so
+    the rest of the FastAPI server remains responsive during transcription.
     """
     loop = asyncio.get_event_loop()
+    # run_in_executor(None, func, *args) → runs func in the default ThreadPoolExecutor
     return await loop.run_in_executor(None, _transcribe_sync, audio_path)

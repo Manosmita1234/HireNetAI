@@ -1,22 +1,43 @@
 """
-services/email_service.py – Email delivery helper for password-reset links.
+services/email_service.py – Password-reset email delivery.
 
-When SMTP settings are not configured (default), the reset link is printed
-to the backend console so developers can test without a mail server.
+Behavior:
+  - In development (no SMTP configured): prints the reset link to the server console
+    so you can test the password reset flow without a real mail server.
+  - In production (SMTP configured in .env): sends a styled HTML email via SMTP/TLS.
+
+To configure production email, set these variables in backend/.env:
+    SMTP_HOST=smtp.gmail.com
+    SMTP_PORT=587
+    SMTP_USER=your-email@gmail.com
+    SMTP_PASSWORD=your-app-password
+    SMTP_FROM=noreply@yourapp.com
 """
 
-import smtplib
+import smtplib                           # Python stdlib: low-level email sending
 import logging
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart  # for building multi-part emails (HTML + plain text)
+from email.mime.text import MIMEText           # wraps HTML or plain text content
 
 from app.config import get_settings
 
-logger = logging.getLogger(__name__)
-settings = get_settings()
+logger = logging.getLogger(__name__)    # module-level logger (appears as "services.email_service" in logs)
+settings = get_settings()               # loads SMTP settings from .env
 
 
 def _build_reset_html(reset_link: str, full_name: str) -> str:
+    """
+    Builds the HTML body for the password reset email.
+
+    The email has:
+      - A dark-themed header with the title "Reset Your Password"
+      - A personalized greeting using the user's full name
+      - A large clickable "Reset Password" button
+      - The raw link in case the button doesn't work (some email clients block buttons)
+      - A note explaining the 1-hour expiry and that ignored emails are safe
+
+    Uses Python f-strings — double curly braces {{ }} produce literal { } in HTML/CSS.
+    """
     return f"""
 <!DOCTYPE html>
 <html>
@@ -61,12 +82,18 @@ def _build_reset_html(reset_link: str, full_name: str) -> str:
 
 async def send_reset_email(to_email: str, reset_link: str, full_name: str = "there") -> None:
     """
-    Send a password-reset email.
+    Send a password-reset email to the given address.
 
-    Falls back to console logging when SMTP is not configured — perfect for
-    local development without a mail server.
+    Always logs the link to the console first (useful for development).
+    Then attempts SMTP delivery only if smtp_host and smtp_user are set in .env.
+
+    Args:
+        to_email:    the recipient's email address
+        reset_link:  the full URL including the token (e.g. http://localhost:5173/reset-password?token=abc)
+        full_name:   used in the personalized greeting ("Hi Alice,")
     """
-    # ── Always log to console for dev convenience ─────────────────────────────
+    # ── Always print to console for easy local testing ─────────────────────────
+    # In development, just copy this link from the server terminal to test the reset flow
     logger.info(
         "\n"
         "=" * 70 + "\n"
@@ -80,28 +107,36 @@ async def send_reset_email(to_email: str, reset_link: str, full_name: str = "the
     print(reset_link)
     print(f"{'='*70}\n")
 
-    # ── Try SMTP if configured ────────────────────────────────────────────────
+    # ── Skip SMTP if not configured ────────────────────────────────────────────
+    # smtp_host and smtp_user must both be set in .env to trigger email delivery
     if not settings.smtp_host or not settings.smtp_user:
         logger.info("[Email] SMTP not configured – using console-only mode.")
-        return
+        return  # console-only in development is fine
 
+    # ── Build and send the email via SMTP/TLS ─────────────────────────────────
     try:
+        # MIMEMultipart("alternative") allows both HTML and plain-text fallback versions
+        # Most email clients will display the HTML version if supported
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Reset your HireNetAI password"
-        msg["From"] = settings.smtp_from or settings.smtp_user
+        msg["From"] = settings.smtp_from or settings.smtp_user   # sender name/address
         msg["To"] = to_email
 
+        # Attach the HTML body to the email
         html_body = _build_reset_html(reset_link, full_name)
         msg.attach(MIMEText(html_body, "html"))
 
+        # Connect to the SMTP server and send
+        # smtplib.SMTP is a context manager — the connection is closed automatically
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.ehlo()
-            server.starttls()
+            server.ehlo()       # identify ourselves to the server (required before STARTTLS)
+            server.starttls()   # upgrade the connection to TLS encryption
             server.login(settings.smtp_user, settings.smtp_password)
             server.sendmail(msg["From"], [to_email], msg.as_string())
 
         logger.info("[Email] Reset email sent to %s via SMTP.", to_email)
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
+        # Log the error but DON'T raise — the reset link was already printed to console,
+        # so developers can still test the flow even if email delivery fails
         logger.error("[Email] Failed to send email to %s: %s", to_email, exc)
-        # Do NOT raise – we still printed the link to console, so dev can continue

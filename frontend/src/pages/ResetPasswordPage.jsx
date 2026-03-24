@@ -1,9 +1,19 @@
 /**
- * pages/ResetPasswordPage.jsx – Set a new password using the token from the reset link.
+ * pages/ResetPasswordPage.jsx – "Set a new password" page.
+ *
+ * How it works:
+ *  1. The user clicks the reset link from their email, e.g.:
+ *       https://hirenetai.com/reset-password?token=abc123
+ *  2. This page extracts the `token` from the URL query string.
+ *  3. If no token is found → shows an "Invalid Link" error screen.
+ *  4. User types a new password and confirms it.
+ *  5. On submit → sends token + new password to POST /auth/reset-password.
+ *  6. On success → shows a success screen and redirects to /login after 2.5 seconds.
  */
 
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+// useSearchParams lets us read URL query parameters like ?token=abc123
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { Brain, Lock, Eye, EyeOff, ArrowLeft, ShieldCheck, AlertTriangle } from 'lucide-react'
@@ -11,26 +21,40 @@ import { authAPI } from '../services/api'
 
 export default function ResetPasswordPage() {
     const navigate = useNavigate()
-    const [searchParams] = useSearchParams()
+    const [searchParams] = useSearchParams()  // reads query params from the current URL
+
+    // Extract the one-time reset token from the URL: /reset-password?token=<THIS>
     const token = searchParams.get('token')
 
+    // Form state: the two password fields
     const [form, setForm] = useState({ new_password: '', confirm_password: '' })
+
+    // Toggle visibility for each password field independently
     const [showPwd, setShowPwd] = useState(false)
     const [showConfirm, setShowConfirm] = useState(false)
-    const [loading, setLoading] = useState(false)
-    const [success, setSuccess] = useState(false)
 
+    const [loading, setLoading] = useState(false)   // true while waiting for server
+    const [success, setSuccess] = useState(false)   // true after password is successfully updated
+
+    // On page load: if there's no token in the URL, warn the user immediately
     useEffect(() => {
         if (!token) {
             toast.error('Invalid reset link. Please request a new one.')
         }
     }, [token])
 
+    /**
+     * handleChange – Updates the form state when the user types in either field.
+     */
     const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
+    /**
+     * handleSubmit – Validates and submits the new password.
+     */
     const handleSubmit = async (e) => {
         e.preventDefault()
 
+        // Client-side validation: passwords must match and be at least 6 chars
         if (form.new_password !== form.confirm_password) {
             toast.error('Passwords do not match.')
             return
@@ -42,9 +66,11 @@ export default function ResetPasswordPage() {
 
         setLoading(true)
         try {
+            // Send token + new_password to the backend; the token identifies who is resetting
             await authAPI.resetPassword({ token, new_password: form.new_password })
-            setSuccess(true)
+            setSuccess(true)   // switch to success UI
             toast.success('Password updated! Redirecting to login…')
+            // Redirect to login after a brief delay so user can see the success message
             setTimeout(() => navigate('/login'), 2500)
         } catch (err) {
             toast.error(err.response?.data?.detail || 'Reset failed. The link may have expired.')
@@ -53,7 +79,7 @@ export default function ResetPasswordPage() {
         }
     }
 
-    // ── Missing / Invalid token state ─────────────────────────────────────────
+    // ── Guard: show error screen if URL has no token ──────────────────────────
     if (!token) {
         return (
             <div className="min-h-screen animated-bg flex items-center justify-center px-4">
@@ -94,7 +120,9 @@ export default function ResetPasswordPage() {
                     <p className="text-brand-300 text-sm mt-1">Choose a strong password for your account</p>
                 </div>
 
+                {/* ── Two states: success message OR the password form ── */}
                 {success ? (
+                    /* Success screen – shown after the password is updated */
                     <motion.div
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -110,8 +138,10 @@ export default function ResetPasswordPage() {
                         </div>
                     </motion.div>
                 ) : (
+                    /* The password change form */
                     <form onSubmit={handleSubmit} className="space-y-5">
-                        {/* New Password */}
+
+                        {/* New Password field with show/hide toggle */}
                         <div>
                             <label className="block text-sm text-brand-300 mb-2">New Password</label>
                             <div className="relative">
@@ -134,7 +164,7 @@ export default function ResetPasswordPage() {
                             </div>
                         </div>
 
-                        {/* Confirm Password */}
+                        {/* Confirm Password field */}
                         <div>
                             <label className="block text-sm text-brand-300 mb-2">Confirm Password</label>
                             <div className="relative">
@@ -154,7 +184,8 @@ export default function ResetPasswordPage() {
                                     {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
                             </div>
-                            {/* Inline match indicator */}
+
+                            {/* Live match indicator: turns green when passwords match */}
                             {form.confirm_password.length > 0 && (
                                 <p className={`text-xs mt-1.5 ${form.new_password === form.confirm_password ? 'text-green-400' : 'text-red-400'}`}>
                                     {form.new_password === form.confirm_password ? '✓ Passwords match' : '✗ Passwords do not match'}
@@ -162,6 +193,7 @@ export default function ResetPasswordPage() {
                             )}
                         </div>
 
+                        {/* Submit button */}
                         <button
                             id="reset-password-btn"
                             type="submit"
@@ -177,6 +209,7 @@ export default function ResetPasswordPage() {
                     </form>
                 )}
 
+                {/* Back to login link */}
                 <div className="mt-6 text-center">
                     <Link
                         to="/login"

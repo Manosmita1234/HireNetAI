@@ -1,15 +1,21 @@
 """
 services/evaluation_service.py – Holistic AI Interview Evaluation Engine.
 
-Reads ALL question-answer pairs from a completed interview session and calls
-the LLM once to produce a single, coherent holistic evaluation covering:
-  - overall_score (0-100)
-  - technical_score (0-100)
-  - communication_score (0-100)
-  - consistency_score (0-100)
-  - decision: "Selected" | "Borderline" | "Rejected"
-  - strengths, weaknesses (lists)
-  - final_summary (3-5 line hiring justification)
+Unlike llm_service.py which evaluates ONE answer at a time,
+this service sends ALL question-answer pairs from the whole interview to GPT
+in a single request, giving a bird's-eye holistic assessment.
+
+What it produces:
+  - overall_score (0–100):      single composite score (note: 0–100 scale, not 0–10)
+  - technical_score (0–100):    depth of technical knowledge shown across all answers
+  - communication_score (0–100): clarity and articulation across all answers
+  - consistency_score (0–100):  how coherent and consistent the candidate was overall
+  - decision:                   "Selected" | "Borderline" | "Rejected"
+  - strengths, weaknesses:      observed patterns across ALL answers
+  - final_summary:              3–5 line written hiring justification
+
+This is called by finalize_session() in video_processor.py after all answers
+are processed and the per-answer scores are already saved.
 """
 
 import json
@@ -25,7 +31,9 @@ from app.schemas.evaluation import EvaluationRequest, HolisticEvaluationResult
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ── System prompt ─────────────────────────────────────────────────────────────
+# ── System prompt ──────────────────────────────────────────────────────────────
+# This sets the GPT model's "persona" for the entire conversation.
+# It is sent as the first message with role="system".
 _SYSTEM_PROMPT = (
     "You are the AI Interview Evaluation Engine for HireNetAI. "
     "You have received a completed video interview session with all question-answer pairs. "
@@ -34,7 +42,9 @@ _SYSTEM_PROMPT = (
     "Return ONLY valid JSON. No markdown. No explanation outside JSON."
 )
 
-# ── User prompt template ──────────────────────────────────────────────────────
+# ── User prompt template ───────────────────────────────────────────────────────
+# Placeholders {candidate_name}, {role_applied}, {count}, {qa_block} are filled in at runtime.
+# Double curly braces {{ }} produce literal { } in the f-string output.
 _USER_PROMPT_TEMPLATE = """\
 Candidate: {candidate_name}
 Role Applied: {role_applied}
@@ -68,19 +78,37 @@ Return EXACTLY this JSON (all scores are integers 0-100):
 
 
 def _build_qa_block(questions: list) -> str:
-    """Format all Q&A items into a readable block for the prompt."""
+    """
+    Formats all Q&A items into a readable text block to embed in the prompt.
+
+    Example output:
+        Q1: Tell me about yourself.
+        A: I am a software engineer with 3 years of experience...
+           [Emotion: neutral (52%)]
+
+        Q2: Describe a challenge you faced.
+        A: I once had to debug a production issue...
+    """
     lines = []
     for q in questions:
         lines.append(f"Q{q.question_id}: {q.question_text}")
         lines.append(f"A: {q.answer_text or '[No response]'}")
         if q.emotion_summary:
+            # Include the dominant emotion as context for the LLM evaluator
             lines.append(f"   [Emotion: {q.emotion_summary}]")
-        lines.append("")  # blank line between pairs
+        lines.append("")  # blank line between Q&A pairs for readability
     return "\n".join(lines)
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
-    """Extract the first JSON object from the LLM response."""
+    """
+    Extracts and parses the first JSON object from the LLM's text response.
+
+    GPT sometimes wraps JSON in markdown code fences (```json ... ```).
+    The regex \\{[\\s\\S]+\\} finds the outermost { ... } block regardless.
+
+    Raises ValueError if no JSON object can be found.
+    """
     match = re.search(r"\{[\s\S]+\}", text)
     if match:
         return json.loads(match.group())
@@ -88,14 +116,19 @@ def _extract_json(text: str) -> Dict[str, Any]:
 
 
 def _fallback_result(reason: str) -> HolisticEvaluationResult:
-    """Return a neutral mid-range result when the LLM call fails."""
+    """
+    Returns a neutral 50/100 result when the LLM call fails or is not configured.
+
+    This prevents the entire finalization from failing just because the holistic
+    evaluation couldn't complete. The per-answer scores are already saved.
+    """
     logger.warning("[EvalEngine] Using fallback result. Reason: %s", reason)
     return HolisticEvaluationResult(
         overall_score=50,
         technical_score=50,
         communication_score=50,
         consistency_score=50,
-        decision="Borderline",
+        decision="Borderline",    # neutral verdict when we can't evaluate
         strengths=["Evaluation unavailable – see individual answer scores"],
         weaknesses=["Holistic LLM evaluation could not be completed"],
         final_summary=(
@@ -110,17 +143,20 @@ async def run_holistic_evaluation(
     request: EvaluationRequest,
 ) -> HolisticEvaluationResult:
     """
-    Send all Q&A pairs to the LLM in one shot and return a HolisticEvaluationResult.
+    Sends the full interview (all Q&A + emotion summaries) to GPT in one call.
+    Returns an HolisticEvaluationResult Pydantic model with all holistic scores.
 
-    Falls back to neutral mid-range scores if:
-    - LLM is not configured (no API key)
-    - LLM call fails for any reason
-    - Response cannot be parsed as valid JSON
+    Fallback cases (returns neutral mid-range scores without crashing):
+      - No OpenAI API key configured
+      - LLM call fails for any reason (network error, rate limit, etc.)
+      - Response cannot be parsed as valid JSON
     """
+    # Guard: skip the expensive API call if no key is configured
     if not settings.openai_api_key:
         logger.info("[EvalEngine] No OpenAI API key configured – skipping LLM call.")
         return _fallback_result("LLM not configured")
 
+    # Build the full text block of all questions and answers
     qa_block = _build_qa_block(request.questions)
     user_prompt = _USER_PROMPT_TEMPLATE.format(
         candidate_name=request.candidate_name,
@@ -132,15 +168,15 @@ async def run_holistic_evaluation(
     try:
         client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
+            base_url=settings.openai_base_url,  # supports local models via compatible APIs
         )
         response = await client.chat.completions.create(
             model=settings.openai_model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {"role": "user",   "content": user_prompt},
             ],
-            temperature=0.2,     # low temp for deterministic structured output
+            temperature=0.2,    # low temperature = more deterministic and structured output
             max_tokens=1024,
         )
         raw = response.choices[0].message.content or ""
@@ -148,12 +184,13 @@ async def run_holistic_evaluation(
 
         data = _extract_json(raw)
 
-        # Clamp all integer scores to 0-100
-        for field in ("overall_score", "technical_score", "communication_score",
-                      "consistency_score"):
+        # Clamp all numeric scores to the valid 0–100 range
+        # (GPT occasionally hallucinates values slightly outside the range)
+        for field in ("overall_score", "technical_score", "communication_score", "consistency_score"):
             if field in data:
                 data[field] = max(0, min(100, int(data[field])))
 
+        # Construct and validate using Pydantic (raises ValidationError on bad structure)
         result = HolisticEvaluationResult(**data)
         logger.info(
             "[EvalEngine] Evaluation complete for '%s' – score=%d decision=%s",
@@ -161,6 +198,6 @@ async def run_holistic_evaluation(
         )
         return result
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("[EvalEngine] LLM call failed: %s", exc)
         return _fallback_result(str(exc)[:200])

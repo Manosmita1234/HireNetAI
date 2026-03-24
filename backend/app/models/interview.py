@@ -3,7 +3,7 @@ models/interview.py – Interview session and per-answer models.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -74,13 +74,24 @@ class InterviewSession(BaseModel):
     candidate_id: str
     candidate_name: str
     candidate_email: str
+    role_applied: str = "General Interview"  # set from resume upload or session start
     answers: List[Answer] = []
 
-    # Aggregated scores
+    # Aggregated scores (filled by scoring_service after finalization)
     final_score: float = 0.0
     category: str = "Not Recommended"
 
-    status: str = "in_progress"    # in_progress | completed | processing
+    # ── JSON transcript export ───────────────────────────────────────────────
+    # Path to the transcript.json file written to disk after interview completion.
+    # e.g.  "app/uploads/<session_id>/transcript.json"
+    transcript_json_path: Optional[str] = None
+
+    # ── AI Role-Fit Decision ─────────────────────────────────────────────────
+    # Populated by json_scoring_service.score_from_json() after export.
+    # Shape: { role_fit_score, decision, strengths, concerns, recommendation }
+    role_fit_result: Optional[Dict[str, Any]] = None
+
+    status: str = "in_progress"    # in_progress | processing | completed
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
 
