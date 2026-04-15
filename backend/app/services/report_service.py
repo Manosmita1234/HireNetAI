@@ -118,13 +118,17 @@ def generate_pdf_report(session: InterviewSession) -> bytes:
     elements.append(Spacer(1, 0.4 * cm))
 
     # Candidate info 3-row table (Candidate, Session ID, Dates)
+    def _fmt_dt(dt):
+        if dt is None:
+            return "—"
+        if isinstance(dt, datetime):
+            return dt.strftime("%Y-%m-%d %H:%M UTC")
+        return str(dt)
+
     info_data = [
         ["Candidate", session.candidate_name,  "Email",     session.candidate_email],
         ["Session ID", str(session.id)[:24],   "Status",    session.status.title()],
-        ["Started",
-         session.started_at.strftime("%Y-%m-%d %H:%M UTC") if session.started_at else "—",
-         "Completed",
-         session.completed_at.strftime("%Y-%m-%d %H:%M UTC") if session.completed_at else "—"],
+        ["Started",    _fmt_dt(session.started_at), "Completed", _fmt_dt(session.completed_at)],
     ]
     # colWidths: controls the width of each column (in cm)
     info_table = Table(info_data, colWidths=[3 * cm, 7 * cm, 3 * cm, 5 * cm])

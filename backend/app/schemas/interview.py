@@ -95,3 +95,27 @@ class SessionDetail(BaseModel):
     final_score: float           # average across all answer_final_scores
     category: str                # hiring recommendation verdict
     status: str
+
+
+class CandidateAnswerFeedback(BaseModel):
+    """
+    Feedback data returned to the CANDIDATE for one answer.
+    Excludes all numeric scores — only shows qualitative AI feedback.
+    """
+    question_id: str
+    question_text: str
+    transcript: Optional[str]
+    llm_evaluation: Optional[Dict[str, Any]]
+
+
+class CandidateResultResponse(BaseModel):
+    """
+    Session result returned to the CANDIDATE (no scores exposed).
+    Only includes feedback: strengths, weaknesses, reasoning, and verdict.
+    """
+    session_id: str
+    candidate_name: str
+    candidate_email: str
+    answers: List[CandidateAnswerFeedback]
+    category: str
+    status: str

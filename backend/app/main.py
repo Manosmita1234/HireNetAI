@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import connect_db, close_db
-from app.routers import auth, interview, upload, admin, evaluate, resume
+from app.routers import auth, interview, upload, admin, evaluate, resume, candidate
 
 settings = get_settings()
 
@@ -52,6 +52,7 @@ app.include_router(upload.router)
 app.include_router(admin.router)
 app.include_router(evaluate.router)
 app.include_router(resume.router)
+app.include_router(candidate.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

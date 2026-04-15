@@ -110,9 +110,19 @@ def _transcribe_sync(audio_path: str) -> Dict[str, Any]:
                 "score": round(w.get("score", 1.0), 3),  # confidence score (0–1)
             })
 
-    full_transcript = " ".join(full_transcript_parts)  # join all sentence-level text
+    full_transcript = " ".join(full_transcript_parts).strip()  # join all sentence-level text
 
-    # ── Step 4: Detect gaps between consecutive words ─────────────────────────
+    # If transcript is empty, near-empty (< 3 chars), or just punctuation, treat as no answer
+    if not full_transcript or len(full_transcript) < 3 or not any(c.isalnum() for c in full_transcript):
+        return {
+            "transcript":       "",
+            "words":            [],
+            "pauses":           [],
+            "hesitation_score": 0.0,
+            "language":         language,
+        }
+
+    # ── Step 4: Detect gaps between consecutive words ──────────────────────────
     LONG_PAUSE_THRESHOLD = 2.0  # any gap > 2 seconds counts as a "long pause"
     pauses: List[Dict[str, float]] = []
 

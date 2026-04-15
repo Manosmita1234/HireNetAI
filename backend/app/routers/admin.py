@@ -175,6 +175,14 @@ async def download_report(
         )
         answers.append(ans)
 
+    from datetime import datetime
+    started_at = doc.get("started_at")
+    completed_at = doc.get("completed_at")
+    if isinstance(started_at, str):
+        started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00")) if started_at else None
+    if isinstance(completed_at, str):
+        completed_at = datetime.fromisoformat(completed_at.replace("Z", "+00:00")) if completed_at else None
+
     session = InterviewSession(
         id=doc["id"],
         candidate_id=doc.get("candidate_id", ""),
@@ -184,6 +192,8 @@ async def download_report(
         final_score=doc.get("final_score", 0.0),
         category=doc.get("category", "Not Recommended"),
         status=doc.get("status", "completed"),
+        started_at=started_at,
+        completed_at=completed_at,
     )
 
     # Generate the PDF as raw bytes

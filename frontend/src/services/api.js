@@ -84,6 +84,25 @@ export const interviewAPI = {
 
     // GET /interview/session/:id → returns full data for one specific session
     getSession: (sessionId) => api.get(`/interview/session/${sessionId}`),
+
+    // POST /interview/session/:id/integrity-event → record a single integrity event
+    recordIntegrityEvent: (sessionId, eventData) =>
+        api.post(`/interview/session/${sessionId}/integrity-event`, eventData),
+
+    // POST /interview/session/:id/integrity-events → batch record integrity events
+    recordIntegrityEvents: (sessionId, eventsData) =>
+        api.post(`/interview/session/${sessionId}/integrity-events`, eventsData),
+}
+
+
+// ── Candidate API ─────────────────────────────────────────────────────────────
+// Candidate-specific endpoints (score-hidden from candidates).
+export const candidateAPI = {
+    // GET /candidate/result/:sessionId → returns session result WITHOUT scores (feedback only)
+    getResult: (sessionId) => api.get(`/candidate/result/${sessionId}`),
+
+    // POST /candidate/submit-interview/:sessionId → submits interview and triggers AI evaluation
+    submitInterview: (sessionId) => api.post(`/candidate/submit-interview/${sessionId}`),
 }
 
 

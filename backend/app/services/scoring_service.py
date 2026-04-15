@@ -1,21 +1,10 @@
 """
-services/scoring_service.py – Weighted score aggregation for interview answers and sessions.
+services/scoring_service.py – Score aggregation for interview answers and sessions.
 
-This module is the final step of the AI pipeline. It takes the raw scores
-produced by WhisperX (hesitation), DeepFace (confidence_index), and GPT (llm_evaluation)
-and combines them into a single readable score.
+Per-answer score = average of 4 LLM sub-scores:
+  - clarity_score, confidence_score, logic_score, relevance_score (each 0–10)
 
-Score Weights (per answer):
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │ Component              │ Source           │ Weight │ Note           │
-  ├─────────────────────────────────────────────────────────────────────┤
-  │ LLM overall_score      │ GPT evaluation   │  40%   │ most important │
-  │ Emotion confidence     │ DeepFace         │  20%   │                │
-  │ Communication level    │ GPT evaluation   │  20%   │ Low/Med/High   │
-  │ Hesitation (inverted)  │ WhisperX pauses  │  20%   │ lower = better │
-  └─────────────────────────────────────────────────────────────────────┘
-
-Session verdict thresholds:
+Session verdict (final score = average of all answer scores):
   ≥ 8.0 → Highly Recommended
   ≥ 6.0 → Recommended
   ≥ 4.0 → Average
@@ -27,71 +16,39 @@ from typing import Dict, Any, List
 from app.models.interview import Answer  # Pydantic model with all answer fields
 
 
-def _communication_score_from_level(level: str) -> float:
-    """
-    Converts the LLM's textual communication level to a numeric 0–10 score.
-
-    "High"   → 10.0 (excellent communicator)
-    "Medium" → 6.0  (average communicator)
-    "Low"    → 2.0  (poor communicator)
-    Unknown  → 5.0  (neutral fallback)
-    """
-    mapping = {"High": 10.0, "Medium": 6.0, "Low": 2.0}
-    return mapping.get(level, 5.0)
-
-
 def score_single_answer(answer: Answer) -> float:
     """
-    Compute the weighted final score (0–10) for one recorded answer.
+    Compute the final score (0–10) for one recorded answer.
 
-    Each component contributes a fraction of the total score:
+    The score is a simple average of the 4 LLM sub-scores:
+      - clarity_score (0–10):    How clearly the candidate expressed their thoughts
+      - confidence_score (0–10): How confident they sounded
+      - logic_score (0–10):      How logical and structured their reasoning was
+      - relevance_score (0–10):  How on-topic and relevant their answer was
 
-      LLM component (40%):
-        llm_evaluation.overall_score × 0.40
-        e.g. GPT score = 8.0 → contributes 3.2
+    If the candidate did not provide an answer (empty transcript), return 0 immediately.
 
-      Emotion confidence component (20%):
-        confidence_index × 0.20
-        e.g. confidence_index = 7.0 → contributes 1.4
+    Emotion confidence, communication level, and hesitation are shown separately
+    in the UI for transparency but do not affect this score.
 
-      Communication component (20%):
-        _communication_score_from_level(communication_level) × 0.20
-        e.g. "High" → 10.0 × 0.20 = 2.0
-
-      Hesitation component (20%) — INVERTED:
-        (10.0 - hesitation_score) × 0.20
-        e.g. hesitation_score = 3.0 → (10-3) × 0.20 = 1.4
-        (lower hesitation = more fluent = higher score)
-
-    Final score is capped at 10.0 and rounded to 2 decimal places.
+    Final score is rounded to 2 decimal places.
     """
-    # ── LLM component (40%) ────────────────────────────────────────────────────
-    llm_score = 0.0
-    if answer.llm_evaluation:
-        llm_score = float(answer.llm_evaluation.overall_score)
-    llm_component = llm_score * 0.40
+    # ── Unanswered question: return 0 ───────────────────────────────────────────
+    transcript = getattr(answer, 'transcript', None) or ""
+    if not transcript.strip():
+        return 0.0
 
-    # ── Emotion confidence component (20%) ─────────────────────────────────────
-    # confidence_index comes from DeepFace emotion analysis (happy + neutral %)
-    emotion_component = answer.confidence_index * 0.20
+    # ── Average the 4 LLM sub-scores ──────────────────────────────────────────
+    if not answer.llm_evaluation:
+        return 0.0
 
-    # ── Communication level component (20%) ────────────────────────────────────
-    comm_level = "Low"  # default if LLM evaluation is unavailable
-    if answer.llm_evaluation:
-        comm_level = answer.llm_evaluation.communication_level
-    comm_score = _communication_score_from_level(comm_level)
-    comm_component = comm_score * 0.20
-
-    # ── Hesitation component (20%) — inverted ──────────────────────────────────
-    # hesitation_score is 0–10 where 10 = very hesitant (many long pauses)
-    # We invert it so that low hesitation produces a high score component
-    # max(0.0, ...) ensures the value never goes negative (in case hesitation_score > 10)
-    hesitation_inverted = max(0.0, 10.0 - answer.hesitation_score)
-    hesitation_component = hesitation_inverted * 0.20
-
-    # ── Final weighted sum ─────────────────────────────────────────────────────
-    final = llm_component + emotion_component + comm_component + hesitation_component
-    return round(min(final, 10.0), 2)  # cap at 10, round to 2 decimal places
+    total = (
+        answer.llm_evaluation.clarity_score
+        + answer.llm_evaluation.confidence_score
+        + answer.llm_evaluation.logic_score
+        + answer.llm_evaluation.relevance_score
+    )
+    return round(total / 4.0, 2)
 
 
 def aggregate_session_score(answers: List[Answer]) -> Dict[str, Any]:

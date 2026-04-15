@@ -80,6 +80,30 @@ def test_score_single_answer_no_llm():
     assert score >= 0.0
 
 
+def test_score_single_answer_empty_transcript():
+    """An empty transcript should result in a score of 0 (no default marking)."""
+    llm = LLMEvaluation(
+        clarity_score=0,
+        confidence_score=0,
+        logic_score=0,
+        relevance_score=0,
+        communication_level="Low",
+        overall_score=0,
+        final_verdict="Not Recommended",
+        reasoning="The candidate did not provide a spoken answer.",
+    )
+    ans = Answer(
+        question_id="q1",
+        question_text="Test question",
+        transcript="",  # empty transcript - no answer
+        llm_evaluation=llm,
+        confidence_index=0.0,
+        hesitation_score=0.0,
+    )
+    score = score_single_answer(ans)
+    assert score == 0.0
+
+
 def test_score_capped_at_10():
     """Score must never exceed 10."""
     ans = make_answer(

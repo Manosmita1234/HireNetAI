@@ -10,7 +10,7 @@
  *  2. Only PDF files are accepted (max 10 MB) – DOCX is handled in the dashboard version
  *  3. After selecting a file, they click "Generate Questions & Start"
  *  4. The resume is sent to POST /resume/upload as FormData (multipart)
- *  5. Backend analyzes the resume with NLP, generates 5 tailored questions, creates a session
+     *  5. Backend analyzes the resume with NLP, extracts skills, generates tailored questions, creates a session
  *  6. On success → shows a brief success state, then redirects to /candidate/interview/:sessionId
  *  7. On error → shows an error banner below the drop zone
  */
@@ -170,8 +170,8 @@ export default function ResumeUploadPage() {
                     <h1 className="text-3xl font-bold mb-2">Upload Your Resume</h1>
                     <p className="text-brand-300 text-sm max-w-md mx-auto">
                         Our AI will read your resume and craft&nbsp;
-                        <span className="text-brand-200 font-semibold">5 personalized interview questions</span>
-                        &nbsp;based on your skills and experience.
+                        <span className="text-brand-200 font-semibold">personalized interview questions</span>
+                        &nbsp;tailored to your specific skills and experience.
                     </p>
                 </motion.div>
 
@@ -289,7 +289,7 @@ export default function ResumeUploadPage() {
                                 className="mt-4 flex items-center gap-2 text-emerald-400 bg-emerald-900/20 rounded-xl px-4 py-3 text-sm"
                             >
                                 <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                                Questions generated! Starting your interview…
+                                Personalized questions ready! Starting your interview…
                             </motion.div>
                         )}
                     </AnimatePresence>

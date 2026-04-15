@@ -69,6 +69,15 @@ class Answer(BaseModel):
 
 
 # ─── Interview session ────────────────────────────────────────────────────────
+class IntegrityEvent(BaseModel):
+    """Records integrity violations during an interview session."""
+    event_type: str  # tab_switch | face_absent | no_voice | multiple_faces
+    question_id: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    duration_seconds: Optional[float] = None  # for face absent events
+    details: Optional[str] = None
+
+
 class InterviewSession(BaseModel):
     id: Optional[str] = None
     candidate_id: str
@@ -90,6 +99,10 @@ class InterviewSession(BaseModel):
     # Populated by json_scoring_service.score_from_json() after export.
     # Shape: { role_fit_score, decision, strengths, concerns, recommendation }
     role_fit_result: Optional[Dict[str, Any]] = None
+
+    # ── Interview Integrity Events ────────────────────────────────────────────
+    # Tracks tab switches, face absence, voice absence, etc.
+    integrity_events: List[IntegrityEvent] = []
 
     status: str = "in_progress"    # in_progress | processing | completed
     started_at: datetime = Field(default_factory=datetime.utcnow)

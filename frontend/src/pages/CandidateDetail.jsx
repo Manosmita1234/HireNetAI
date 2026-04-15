@@ -30,7 +30,7 @@ import {
     Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale,
     LinearScale, BarElement, RadialLinearScale, PointElement, LineElement
 } from 'chart.js'
-import { ArrowLeft, Download, Play, FileText, Brain, ChevronDown, ChevronUp, RefreshCw, FileJson, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Download, Play, FileText, Brain, ChevronDown, ChevronUp, RefreshCw, FileJson, CheckCircle, XCircle, AlertCircle, Eye, EyeOff, User, VolumeX, ShieldAlert } from 'lucide-react'
 import { adminAPI } from '../services/api'
 
 // This line tells Chart.js which components we want to use (tree-shaking registration)
@@ -544,6 +544,79 @@ export default function CandidateDetail() {
                         </motion.div>
                     )
                 })()}
+
+                {/* ── Interview Integrity Card ─────────────────────────────────── */}
+                {session.integrity_events && session.integrity_events.length > 0 && (
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                        className="glass rounded-2xl p-6 mb-8 border border-amber-500/30 bg-amber-500/5">
+                        <div className="flex items-center justify-between mb-5">
+                            <div className="flex items-center gap-3">
+                                <ShieldAlert className="w-6 h-6 text-amber-400" />
+                                <h2 className="font-semibold text-lg text-amber-200">Interview Integrity</h2>
+                            </div>
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300">
+                                {session.integrity_events.length} event{session.integrity_events.length !== 1 ? 's' : ''}
+                            </span>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-4">
+                            {(() => {
+                                const eventCounts = { tab_switch: 0, face_absent: 0, no_voice: 0, multiple_faces: 0 }
+                                session.integrity_events.forEach(e => {
+                                    if (eventCounts.hasOwnProperty(e.event_type)) {
+                                        eventCounts[e.event_type]++
+                                    }
+                                })
+
+                                const eventLabels = {
+                                    tab_switch: { icon: EyeOff, label: 'Tab Switches', color: 'text-amber-400', bg: 'bg-amber-500/10' },
+                                    face_absent: { icon: Eye, label: 'Face Absent', color: 'text-red-400', bg: 'bg-red-500/10' },
+                                    no_voice: { icon: VolumeX, label: 'Silence', color: 'text-amber-400', bg: 'bg-amber-500/10' },
+                                    multiple_faces: { icon: User, label: 'Multiple Faces', color: 'text-red-400', bg: 'bg-red-500/10' },
+                                }
+
+                                return Object.entries(eventCounts).filter(([_, count]) => count > 0).map(([type, count]) => {
+                                    const config = eventLabels[type] || { icon: AlertCircle, label: type, color: 'text-brand-400', bg: 'bg-brand-500/10' }
+                                    const Icon = config.icon
+                                    return (
+                                        <div key={type} className={`flex items-center justify-between p-3 rounded-xl ${config.bg}`}>
+                                            <div className="flex items-center gap-2">
+                                                <Icon className={`w-4 h-4 ${config.color}`} />
+                                                <span className="text-sm text-brand-200">{config.label}</span>
+                                            </div>
+                                            <span className={`text-lg font-bold ${config.color}`}>{count}</span>
+                                        </div>
+                                    )
+                                })
+                            })()}
+                        </div>
+
+                        <div className="mt-4 max-h-48 overflow-y-auto space-y-2">
+                            {session.integrity_events.slice(-10).reverse().map((event, i) => (
+                                <div key={i} className="flex items-start gap-3 text-xs text-brand-300 bg-surface-card/30 rounded-lg p-2">
+                                    <div className="shrink-0 mt-0.5">
+                                        {event.event_type === 'tab_switch' && <EyeOff className="w-3.5 h-3.5 text-amber-400" />}
+                                        {event.event_type === 'face_absent' && <Eye className="w-3.5 h-3.5 text-red-400" />}
+                                        {event.event_type === 'no_voice' && <VolumeX className="w-3.5 h-3.5 text-amber-400" />}
+                                        {event.event_type === 'multiple_faces' && <User className="w-3.5 h-3.5 text-red-400" />}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-medium text-brand-200 capitalize">{event.event_type.replace('_', ' ')}</span>
+                                            {event.question_id && (
+                                                <span className="text-brand-500">• Q{(session.answers || []).findIndex(a => a.question_id === event.question_id) + 1}</span>
+                                            )}
+                                        </div>
+                                        {event.details && <p className="text-brand-400 mt-0.5">{event.details}</p>}
+                                    </div>
+                                    <div className="shrink-0 text-brand-500">
+                                        {event.duration_seconds && <span>{event.duration_seconds}s</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
 
                 {/* ── Per-answer accordions ─────────────────────────────────── */}
                 <h2 className="text-xl font-semibold mb-4">Answer Analysis</h2>

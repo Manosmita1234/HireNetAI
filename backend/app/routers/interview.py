@@ -52,10 +52,13 @@ async def get_session_questions(
 
     The tailored questions are sorted by their 'order' field (1, 2, 3…) so they
     appear in the same order the LLM generated them.
+
+    For resume-uploaded sessions, returns all available tailored questions (up to 10).
+    For sessions without resume, returns up to 5 general questions from the global bank.
     """
     # First look for tailored questions linked to this specific session
-    # .limit(5) → only return the first 5 questions (sorted by order)
-    cursor = db["session_questions"].find({"session_id": session_id}).sort("order", 1).limit(5)
+    # Return all available tailored questions (up to 10), sorted by order
+    cursor = db["session_questions"].find({"session_id": session_id}).sort("order", 1).limit(10)
     questions = []
     async for doc in cursor:
         doc = mongo_doc_to_dict(doc)
@@ -68,7 +71,7 @@ async def get_session_questions(
             doc = mongo_doc_to_dict(doc)
             questions.append(doc)
 
-    return {"questions": questions}
+    return {"questions": questions, "is_personalized": len(questions) > 0 and questions[0].get("category") == "tailored"}
 
 
 @router.post("/session/start", response_model=StartSessionResponse, status_code=201)
@@ -108,20 +111,23 @@ async def get_session(
     """
     Return full session details including all answers and AI scores.
 
-    Authorization rules:
-      - Candidates can only view sessions they own (candidate_id must match their user ID)
-      - Admins can view any session
+    Authorization: ADMIN ONLY. Candidates must use GET /candidate/result/{session_id}
+    which returns the same data but with all scores excluded.
+
+    This endpoint exposes per-answer composite scores (answer_final_score) and
+    LLM evaluation scores, so it is restricted to admin users only.
     """
-    # Find the session by its MongoDB _id (must convert string → ObjectId for MongoDB query)
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Use GET /candidate/result/{id} to view your results (scores hidden). Admin access required for full scores."
+        )
+
     doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Enforce ownership: a candidate can't see another candidate's session
-    if current_user["role"] == "candidate" and doc["candidate_id"] != current_user["sub"]:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    doc = mongo_doc_to_dict(doc)  # convert _id → id
+    doc = mongo_doc_to_dict(doc)
     return doc
 
 
@@ -158,6 +164,89 @@ async def complete_session(
     asyncio.create_task(finalize_session(session_id, db))
 
     return {"message": "Session marked as complete. Final scoring in progress."}
+
+
+@router.post("/session/{session_id}/integrity-event")
+async def record_integrity_event(
+    session_id: str,
+    event_data: dict,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """
+    Record an integrity event during an interview (tab switch, face absent, no voice, etc.).
+    
+    Event types:
+      - tab_switch: candidate switched browser tabs
+      - face_absent: no face detected in video for > threshold seconds
+      - no_voice: prolonged silence (no speech detected)
+      - multiple_faces: more than one face detected
+    """
+    from datetime import datetime, timezone
+    from bson import ObjectId
+
+    doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Verify the user owns this session
+    if doc["candidate_id"] != current_user["sub"] and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    event = {
+        "event_type": event_data.get("event_type"),
+        "question_id": event_data.get("question_id"),
+        "timestamp": datetime.now(timezone.utc),
+        "duration_seconds": event_data.get("duration_seconds"),
+        "details": event_data.get("details"),
+    }
+
+    await db["sessions"].update_one(
+        {"_id": ObjectId(session_id)},
+        {"$push": {"integrity_events": event}},
+    )
+
+    return {"message": "Event recorded"}
+
+
+@router.post("/session/{session_id}/integrity-events")
+async def batch_record_integrity_events(
+    session_id: str,
+    events_data: list,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """
+    Record multiple integrity events at once (e.g., at end of interview).
+    """
+    from datetime import datetime, timezone
+    from bson import ObjectId
+
+    doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if doc["candidate_id"] != current_user["sub"] and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    events = [
+        {
+            "event_type": e.get("event_type"),
+            "question_id": e.get("question_id"),
+            "timestamp": datetime.now(timezone.utc),
+            "duration_seconds": e.get("duration_seconds"),
+            "details": e.get("details"),
+        }
+        for e in events_data
+    ]
+
+    if events:
+        await db["sessions"].update_one(
+            {"_id": ObjectId(session_id)},
+            {"$push": {"integrity_events": {"$each": events}}},
+        )
+
+    return {"message": f"Recorded {len(events)} events"}
 
 
 @router.get("/my-sessions")

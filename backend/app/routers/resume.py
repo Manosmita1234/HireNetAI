@@ -13,7 +13,7 @@ Full processing flow:
        • DOCX → python-docx
   5. Scan the text for known technical skills using regex patterns (SKILL_PATTERNS dict)
      Each skill has one or more regex patterns; hits are counted → top 20 skills returned
-  6. Send the skills + resume text snippet to GPT → generates 10 tailored questions
+   6. Send the skills + resume text snippet to GPT → generates 5 tailored questions
      Falls back to DEFAULT_QUESTIONS if OpenAI is not configured or the call fails
   7. Create an InterviewSession in MongoDB
      (linked to the logged-in user, or "anonymous" if not authenticated)
@@ -250,26 +250,36 @@ You will be given a structured list of skills detected from a candidate's resume
 followed by the full resume text for additional context (projects, experience, education).
 
 YOUR TASK:
-Generate exactly 10 interview questions based STRICTLY on the detected skills.
+Generate exactly 5 highly personalized interview questions based STRICTLY on the detected skills.
 
 STRICT RULES:
-1. Every single question MUST reference at least one skill from the detected skills list.
-2. Distribute questions across the skills — do NOT ask 10 questions about one skill.
-3. For EACH programming language or framework in the list, ask at least one deep technical question.
-   Examples of good questions:
-   - "Explain pointers and pointer arithmetic in C. When would you use them?"
-   - "What is the difference between JVM, JRE, and JDK in Java?"
-   - "How does the Virtual DOM work in React and why does it improve performance?"
-   - "What is the difference between supervised and unsupervised learning in Machine Learning?"
-4. If the resume mentions specific projects, include at least 1–2 project-based questions.
-5. Include a mix of: conceptual, problem-solving, and experience-based questions.
-6. Questions must be appropriate for a software engineer candidate interview.
-7. Do NOT ask generic questions like "Tell me about yourself" — every question must be skill-specific.
+1. EVERY question MUST be directly related to at least one skill from the detected skills list.
+2. DISTRIBUTE questions across ALL major skills detected — do not focus on just 1-2 skills.
+3. For EACH detected skill, create at least one question that tests deep understanding:
+   - For programming languages: ask about internals, best practices, common pitfalls
+   - For frameworks: ask about architecture, patterns, performance considerations
+   - For databases: ask about design, querying, optimization, transactions
+   - For cloud/DevOps: ask about architecture decisions, scaling, monitoring
+   - For AI/ML: ask about algorithms, model selection, evaluation metrics, practical applications
+4. Include project-based questions if the resume mentions specific projects or work experience.
+5. Question difficulty should match what would be asked in a real technical screening.
+6. VARY question types: conceptual explanations, scenario-based, problem-solving, design questions.
+7. Questions must be specific — NOT generic interview tropes.
+
+GOOD examples:
+- "You mentioned Python experience. How would you optimize a list comprehension that processes millions of items?"
+- "For the React application you built, how would you handle state management at scale with multiple independent components?"
+- "Your SQL experience includes PostgreSQL. How would you design indexes for a query that filters by date range AND user_id?"
+
+BAD examples (too generic, don't do these):
+- "Tell me about yourself"
+- "What are your strengths and weaknesses?"
+- "Where do you see yourself in 5 years?"
 
 OUTPUT FORMAT (strict):
 Return ONLY a valid JSON object with exactly this shape — no markdown, no explanation:
 {
-  "questions": ["Question 1?", "Question 2?", ..., "Question 10?"]
+  "questions": ["Question 1?", "Question 2?", "Question 3?", "Question 4?", "Question 5?"]
 }
 """
 
@@ -285,9 +295,12 @@ async def _generate_questions(skills: list[str], resume_text: str) -> list[str]:
     response_format={"type": "json_object"}: forces GPT to return valid JSON
     (available in models that support JSON mode, e.g. gpt-4o-mini, gpt-4o).
 
-    Returns: list of up to 15 question strings (capped to prevent runaway responses)
+    Returns: list of up to 5 question strings (capped to prevent runaway responses)
     """
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+    )
 
     # Format skills as a comma-separated string; fallback if no skills detected
     skills_str = ", ".join(skills) if skills else "General software engineering"
@@ -297,7 +310,7 @@ async def _generate_questions(skills: list[str], resume_text: str) -> list[str]:
     user_message = (
         f"DETECTED SKILLS (sorted by frequency in resume):\n{skills_str}\n\n"
         f"RESUME TEXT (for project/experience context):\n{truncated_resume}\n\n"
-        f"Generate exactly 10 technical interview questions covering the detected skills above."
+        f"Generate exactly 5 technical interview questions covering the detected skills above."
     )
 
     response = await client.chat.completions.create(
@@ -307,7 +320,7 @@ async def _generate_questions(skills: list[str], resume_text: str) -> list[str]:
             {"role": "user",   "content": user_message},
         ],
         temperature=0.6,                            # some creativity while staying relevant
-        max_tokens=1200,                            # enough for 10 questions in JSON
+        max_tokens=700,                            # enough for 5 questions in JSON
         response_format={"type": "json_object"},    # enforce valid JSON output
     )
 
@@ -318,7 +331,7 @@ async def _generate_questions(skills: list[str], resume_text: str) -> list[str]:
     questions = parsed.get("questions", [])
     if not isinstance(questions, list) or len(questions) < 1:
         raise ValueError("LLM did not return a valid questions list")
-    return questions[:15]  # cap at 15 questions max
+    return questions[:5]  # cap at 5 questions max
 
 
 # ── Default fallback questions ─────────────────────────────────────────────────
