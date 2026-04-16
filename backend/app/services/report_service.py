@@ -72,6 +72,17 @@ def _verdict_color(verdict: str) -> Any:
     return mapping.get(verdict, DARK_TEXT)
 
 
+def _verdict_hex(verdict: str) -> str:
+    """Returns the hex color string for a given verdict (without # prefix)."""
+    mapping = {
+        "Highly Recommended": "10B981",  # emerald-500
+        "Recommended":        "3B82F6",  # blue-500
+        "Average":            "F59E0B",  # amber-500
+        "Not Recommended":    "EF4444",  # red-500
+    }
+    return mapping.get(verdict, "6B7280")  # grey-500 as fallback
+
+
 def generate_pdf_report(session: InterviewSession) -> bytes:
     """
     Builds a complete PDF report for the given InterviewSession and returns it as bytes.
@@ -147,14 +158,13 @@ def generate_pdf_report(session: InterviewSession) -> bytes:
     elements.append(Spacer(1, 0.5 * cm))
 
     # ── SECTION 2: Final Score Box ─────────────────────────────────────────────
-    elements.append(Paragraph("📊 Final Evaluation", h2))
     verdict_color = _verdict_color(session.category)
+    verdict_hex = _verdict_hex(session.category)
     score_data = [[
         Paragraph("<b>Final Score</b>", bold),
         Paragraph(f"<b>{session.final_score} / 10</b>", bold),
         Paragraph("<b>Recommendation</b>", bold),
-        # hexval() returns the hex color as a string; [1:] strips the leading "#"
-        Paragraph(f'<font color="#{verdict_color.hexval()[1:]}">{session.category}</font>', bold),
+        Paragraph(f'<font color="#{verdict_hex}">{session.category}</font>', bold),
     ]]
     score_table = Table(score_data, colWidths=[4 * cm, 4 * cm, 5 * cm, 5 * cm])
     score_table.setStyle(TableStyle([

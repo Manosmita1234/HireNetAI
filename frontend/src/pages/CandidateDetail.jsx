@@ -179,11 +179,23 @@ function AnswerCard({ answer, sessionId, index }) {
                 <div className="px-6 pb-6 space-y-6">
 
                     {/* Video player (streams the recorded answer from the backend) */}
-                    {answer.video_path && (
+                    {answer.video_path ? (
                         <div>
                             <h3 className="text-sm font-semibold text-brand-300 mb-2 flex items-center gap-2"><Play className="w-3.5 h-3.5" /> Recorded Answer</h3>
-                            <video src={videoUrl} controls className="w-full rounded-xl max-h-64 bg-black" />
+                            <video 
+                                src={videoUrl} 
+                                controls 
+                                className="w-full rounded-xl max-h-64 bg-black"
+                                onError={(e) => {
+                                    console.error('Video load error:', e);
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling?.classList.remove('hidden');
+                                }}
+                            />
+                            <div className="hidden text-brand-400 text-sm mt-2">Video unavailable</div>
                         </div>
+                    ) : (
+                        <div className="text-brand-500 text-sm italic">No video recording</div>
                     )}
 
                     {/* Transcript from WhisperX speech-to-text */}
@@ -192,16 +204,6 @@ function AnswerCard({ answer, sessionId, index }) {
                         <p className="text-sm text-brand-200 leading-relaxed glass rounded-xl p-4 bg-surface-card/20">
                             {answer.transcript || <span className="text-brand-500 italic">No transcript available</span>}
                         </p>
-                    </div>
-
-                    {/* Nervousness score (derived from emotion analysis) */}
-                    <div className="grid grid-cols-1 gap-3 text-center">
-                        {[{ label: 'Nervousness', value: answer.nervousness_score?.toFixed(1) }].map(m => (
-                            <div key={m.label} className="glass rounded-xl p-3 bg-surface-card/20">
-                                <p className="text-2xl font-bold gradient-text">{m.value}</p>
-                                <p className="text-brand-400 text-xs mt-1">{m.label} /10</p>
-                            </div>
-                        ))}
                     </div>
 
                     {/* Charts side by side */}

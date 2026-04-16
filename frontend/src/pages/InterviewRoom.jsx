@@ -41,6 +41,7 @@ export default function InterviewRoom() {
     const [isFullscreen, setIsFullscreen] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [timeWarning, setTimeWarning] = useState(false)
+    const [questionsError, setQuestionsError] = useState(null)
 
     const videoRef = useRef(null)
     const mediaRecorderRef = useRef(null)
@@ -48,6 +49,8 @@ export default function InterviewRoom() {
     const streamRef = useRef(null)
     const timerRef = useRef(null)
     const containerRef = useRef(null)
+
+    const currentQuestionId = questions[currentIdx]?.id
 
     const isRecording = recordStatus === STATUS.RECORDING
     const {
@@ -61,17 +64,31 @@ export default function InterviewRoom() {
         videoRef,
         streamRef,
         sessionId,
-        questions[currentIdx]?.id,
+        currentQuestionId,
         isRecording
     )
 
-    useEffect(() => {
+    // Store flushAllEvents in a ref so cleanup doesn't trigger camera restart
+    const flushAllEventsRef = useRef(flushAllEvents)
+    flushAllEventsRef.current = flushAllEvents
+
+    const loadQuestions = useCallback(() => {
+        if (!sessionId) return
+        setQuestionsError(null)
         interviewAPI.getSessionQuestions(sessionId)
             .then(({ data }) => {
                 setQuestions(data.questions || [])
                 setInterviewStatus(STATUS.IDLE)
             })
-            .catch(() => toast.error('Failed to load questions'))
+            .catch((err) => {
+                console.error('Failed to load questions:', err)
+                setQuestionsError('Failed to load questions. Please try again.')
+                toast.error('Failed to load questions')
+            })
+    }, [sessionId])
+
+    useEffect(() => {
+        loadQuestions()
 
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then((stream) => {
@@ -87,35 +104,13 @@ export default function InterviewRoom() {
         return () => {
             streamRef.current?.getTracks().forEach(t => t.stop())
             clearInterval(timerRef.current)
-            flushAllEvents()
+            flushAllEventsRef.current?.()
         }
-    }, [flushAllEvents])
+    }, [loadQuestions])
 
-    useEffect(() => {
-        if (recordStatus === STATUS.RECORDING) {
-            timerRef.current = setInterval(() => {
-                setTimer(prev => {
-                    if (prev >= MAX_RECORDING_TIME) {
-                        handleStopRecording()
-                        return prev
-                    }
-                    if (prev >= WARNING_TIME && !timeWarning) {
-                        setTimeWarning(true)
-                    }
-                    return prev + 1
-                })
-            }, 1000)
-        } else {
-            clearInterval(timerRef.current)
-            if (recordStatus === STATUS.IDLE) {
-                setTimer(0)
-                setTimeWarning(false)
-            }
-        }
-        return () => clearInterval(timerRef.current)
-    }, [recordStatus, timeWarning])
-
-    const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+    const handleStopRecording = useCallback(() => {
+        mediaRecorderRef.current?.stop()
+    }, [])
 
     const startRecording = useCallback(() => {
         if (!streamRef.current) return
@@ -128,13 +123,37 @@ export default function InterviewRoom() {
         setRecordStatus(STATUS.RECORDING)
     }, [])
 
-    const handleStopRecording = useCallback(() => {
-        mediaRecorderRef.current?.stop()
-    }, [])
-
     const stopRecording = () => {
         handleStopRecording()
     }
+
+    const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+
+    useEffect(() => {
+        if (recordStatus !== STATUS.RECORDING) {
+            clearInterval(timerRef.current)
+            if (recordStatus === STATUS.IDLE) {
+                setTimer(0)
+                setTimeWarning(false)
+            }
+            return
+        }
+
+        timerRef.current = setInterval(() => {
+            setTimer(prev => {
+                if (prev >= MAX_RECORDING_TIME) {
+                    handleStopRecording()
+                    return prev
+                }
+                if (prev >= WARNING_TIME && !timeWarning) {
+                    setTimeWarning(true)
+                }
+                return prev + 1
+            })
+        }, 1000)
+
+        return () => clearInterval(timerRef.current)
+    }, [recordStatus, timeWarning, handleStopRecording])
 
     const uploadAnswer = useCallback(async () => {
         if (chunksRef.current.length === 0) { toast.error('No video recorded'); return }
@@ -208,8 +227,27 @@ export default function InterviewRoom() {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
     }, [])
 
-    const isLastQuestion = currentIdx >= questions.length - 1
-    const currentQuestion = questions[currentIdx]
+    // Safety check: if no sessionId, show error
+    if (!sessionId) {
+        return (
+            <div className="min-h-screen animated-bg flex items-center justify-center">
+                <div className="glass rounded-2xl p-8 max-w-md text-center neon-border">
+                    <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold mb-2 text-white">Invalid Session</h2>
+                    <p className="text-brand-300 text-sm mb-6">No session ID provided. Please start an interview from your dashboard.</p>
+                    <button
+                        onClick={() => navigate('/candidate/dashboard')}
+                        className="bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+                    >
+                        Go to Dashboard
+                    </button>
+                </div>
+            </div>
+        )
+    }
+
+    const isLastQuestion = questions.length > 0 && currentIdx >= questions.length - 1
+    const currentQuestion = questions[currentIdx] || null
 
     if (hasPermission === false) {
         return (
@@ -224,6 +262,23 @@ export default function InterviewRoom() {
     }
 
     if (questions.length === 0) {
+        if (questionsError) {
+            return (
+                <div className="min-h-screen animated-bg flex items-center justify-center">
+                    <div className="glass rounded-2xl p-8 max-w-md text-center neon-border">
+                        <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                        <h2 className="text-xl font-bold mb-2 text-white">Unable to Load Questions</h2>
+                        <p className="text-brand-300 text-sm mb-6">{questionsError}</p>
+                        <button
+                            onClick={loadQuestions}
+                            className="bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                </div>
+            )
+        }
         return (
             <div className="min-h-screen animated-bg flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin" />

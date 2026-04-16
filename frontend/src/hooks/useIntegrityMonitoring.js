@@ -71,7 +71,7 @@ export function useFaceDetection(videoRef, sessionId, questionId, enabled = true
         const video = videoRef.current
         setLastFaceCheck(new Date())
 
-        const isVideoPlaying = video.readyState >= 2 && !video.paused && !videoEnded
+        const isVideoPlaying = video.readyState >= 2 && !video.paused && !video.ended
         const hasValidDimensions = video.videoWidth > 0 && video.videoHeight > 0
         
         if (isVideoPlaying && hasValidDimensions) {
@@ -260,13 +260,29 @@ export function useIntegrityMonitoring(videoRef, streamRef, sessionId, questionI
     const faceDetection = useFaceDetection(videoRef, sessionId, questionId, enabled)
     const voiceActivity = useVoiceActivityDetection(streamRef, sessionId, questionId, enabled)
 
+    // Use refs to store the latest flush functions so flushAllEvents stays stable
+    const flushRefs = useRef({
+        tabSwitch: null,
+        faceDetection: null,
+        voiceActivity: null,
+    })
+
+    // Update refs when flush functions change (without recreating flushAllEvents)
+    useEffect(() => {
+        flushRefs.current = {
+            tabSwitch: tabSwitch.flushEvents,
+            faceDetection: faceDetection.flushEvents,
+            voiceActivity: voiceActivity.flushEvents,
+        }
+    }, [tabSwitch.flushEvents, faceDetection.flushEvents, voiceActivity.flushEvents])
+
     const flushAllEvents = useCallback(async () => {
         await Promise.all([
-            tabSwitch.flushEvents(),
-            faceDetection.flushEvents(),
-            voiceActivity.flushEvents(),
+            flushRefs.current.tabSwitch?.(),
+            flushRefs.current.faceDetection?.(),
+            flushRefs.current.voiceActivity?.(),
         ])
-    }, [tabSwitch, faceDetection, voiceActivity])
+    }, [])  // Empty deps - function is now stable
 
     const integrityWarnings = [
         ...(tabSwitch.tabSwitchCount > 0 ? [`Tab switches: ${tabSwitch.tabSwitchCount}`] : []),

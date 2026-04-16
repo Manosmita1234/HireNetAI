@@ -50,8 +50,8 @@ class Answer(BaseModel):
     # Emotion analysis
     frame_emotions: List[FrameEmotion] = []
     emotion_distribution: Dict[str, float] = {}
-    confidence_index: float = 0.0
-    nervousness_score: float = 0.0
+    confidence_index: Optional[float] = None
+    nervousness_score: Optional[float] = None
 
     # Hesitation
     pause_count: int = 0
