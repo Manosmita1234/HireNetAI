@@ -8,27 +8,24 @@
 html { scroll-behavior: smooth; }
 
 body {
-  @apply bg-surface text-white font-sans antialiased;
+  @apply bg-surface text-slate-700 font-sans antialiased;
   min-height: 100vh;
 }
 
 /* ── Custom scrollbar ─────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { @apply bg-surface; }
-::-webkit-scrollbar-thumb { @apply bg-brand-700 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-brand-500; }
+::-webkit-scrollbar-track { @apply bg-slate-100; }
+::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
 
-/* ── Glass card utility ───────────────────────────────────────────────────── */
-.glass {
-  background: rgba(26, 24, 48, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+/* ── Card utility ──────────────────────────────────────────────────────────── */
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden;
 }
 
 /* ── Gradient text ────────────────────────────────────────────────────────── */
 .gradient-text {
-  @apply bg-gradient-to-r from-brand-400 to-purple-400 bg-clip-text text-transparent;
+  @apply bg-gradient-to-r from-blue-500 to-indigo-500 bg-clip-text text-transparent;
 }
 
 /* ── Recording pulse ring ─────────────────────────────────────────────────── */
@@ -38,23 +35,55 @@ body {
 }
 .recording-active { animation: recordingPulse 1.5s ease-in-out infinite; }
 
-/* ── Animated gradient background ────────────────────────────────────────── */
+/* ── Professional gradient background ─────────────────────────────────── */
 .animated-bg {
-  background: linear-gradient(-45deg, #0f0e1a, #1e1b4b, #1a0a2e, #0c1445);
-  background-size: 400% 400%;
-  animation: gradientShift 12s ease infinite;
-}
-@keyframes gradientShift {
-  0%   { background-position: 0% 50%;   }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%;   }
+  background: linear-gradient(135deg, #f8fafc 0%, #e0e7ff 50%, #f0fdf4 100%);
+  background-size: 200% 200%;
 }
 
-/* ── Neon glow ──────────────────────────────────────────────────────────── */
-.neon-border {
-  box-shadow: 0 0 0 1px rgba(99,102,241,0.4), 0 0 20px rgba(99,102,241,0.15);
+/* ── Fade-in animation ────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.neon-border:hover {
-  box-shadow: 0 0 0 1px rgba(99,102,241,0.7), 0 0 30px rgba(99,102,241,0.25);
-  transition: box-shadow 0.3s ease;
+
+/* ── Slide-up animation ─────────────────────────────────────────────────── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+.animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
+
+/* ── Professional button styles ──────────────────────────────────────────── */
+@layer components {
+  .btn-primary {
+    @apply px-6 py-3 bg-blue-600 text-white font-medium rounded-lg shadow-sm
+      hover:bg-blue-700 hover:shadow-md
+      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+      transition-all duration-200 ease-in-out
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-slate-100 text-slate-700 font-medium rounded-lg
+      hover:bg-slate-200
+      focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2
+      transition-all duration-200 ease-in-out;
+  }
+
+  .btn-danger {
+    @apply px-6 py-3 bg-red-600 text-white font-medium rounded-lg shadow-sm
+      hover:bg-red-700 hover:shadow-md
+      focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2
+      transition-all duration-200 ease-in-out;
+  }
+
+  .btn-success {
+    @apply px-6 py-3 bg-green-600 text-white font-medium rounded-lg shadow-sm
+      hover:bg-green-700 hover:shadow-md
+      focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2
+      transition-all duration-200 ease-in-out;
+  }
 }

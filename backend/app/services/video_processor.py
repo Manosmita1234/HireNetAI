@@ -27,7 +27,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
 from app.config import get_settings
-from app.services import whisper_service, emotion_service, llm_service, scoring_service
+from app.services import whisper_service, emotion_service, face_analysis_service, llm_service, scoring_service
 from app.models.interview import Answer, LLMEvaluation
 
 settings = get_settings()
@@ -60,53 +60,6 @@ def _extract_audio_sync(video_path: str, audio_path: str) -> None:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr[:500]}")
-
-
-async def _update_session_score(session_id: str, db: AsyncIOMotorDatabase) -> None:
-    """
-    Update the session's final_score and category based on all processed answers.
-    Called after each answer is processed to keep the running score up-to-date.
-    """
-    try:
-        doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
-        if not doc:
-            return
-
-        raw_answers = doc.get("answers", [])
-        if not raw_answers:
-            return
-
-        # Build Answer objects with stored scores
-        from app.models.interview import Answer, LLMEvaluation
-        answers = []
-        for a in raw_answers:
-            llm_data = a.get("llm_evaluation")
-            llm_eval = LLMEvaluation(**llm_data) if llm_data else None
-            stored_score = a.get("answer_final_score", 0.0)
-            ans = Answer(
-                question_id=a.get("question_id", ""),
-                question_text=a.get("question_text", ""),
-                transcript=a.get("transcript"),
-                confidence_index=a.get("confidence_index"),
-                hesitation_score=a.get("hesitation_score", 0.0),
-                llm_evaluation=llm_eval,
-                answer_final_score=stored_score,
-            )
-            answers.append(ans)
-
-        # Compute aggregate score
-        agg = scoring_service.aggregate_session_score(answers)
-
-        # Update session
-        await db["sessions"].update_one(
-            {"_id": ObjectId(session_id)},
-            {"$set": {
-                "final_score": agg["final_score"],
-                "category": agg["category"],
-            }},
-        )
-    except Exception as e:
-        print(f"[Pipeline] Warning: failed to update session score: {e}")
 
 
 async def process_video(
@@ -154,13 +107,29 @@ async def process_video(
         update_fields["answers.$.long_pauses"]      = whisper_result["pauses"]
         update_fields["answers.$.hesitation_score"] = whisper_result["hesitation_score"]
 
-        # ── Step C: Facial emotion analysis (DISABLED) ─────────────────────────
-        # DeepFace is not available in this deployment.
-        # Emotion-related fields remain empty/null.
-        update_fields["answers.$.frame_emotions"]       = []
-        update_fields["answers.$.emotion_distribution"] = {}
-        update_fields["answers.$.confidence_index"]     = None
-        update_fields["answers.$.nervousness_score"]     = None
+        # ── Step C: Facial emotion analysis (DeepFace) ─────────────────────────
+        print(f"[Pipeline] {session_id}/{question_id} – analyzing emotions …")
+        emotion_result = await emotion_service.analyze_video_emotions(video_path)
+        update_fields["answers.$.frame_emotions"]       = emotion_result["frame_emotions"]
+        update_fields["answers.$.emotion_distribution"] = emotion_result["emotion_distribution"]
+        update_fields["answers.$.confidence_index"]     = emotion_result["confidence_index"]
+        update_fields["answers.$.nervousness_score"]    = emotion_result["nervousness_score"]
+
+        # ── Step C2: OpenCV Haar Cascade face detection ──────────────────────────
+        print(f"[Pipeline] {session_id}/{question_id} – detecting faces …")
+        face_result = await asyncio.get_event_loop().run_in_executor(
+            None, face_analysis_service.analyze_video_faces, video_path
+        )
+        update_fields["answers.$.face_analytics"] = {
+            "total_frames_analyzed": face_result["total_frames_analyzed"],
+            "frames_with_face":      face_result["frames_with_face"],
+            "frames_without_face":   face_result["frames_without_face"],
+            "frames_multiple_faces": face_result["frames_multiple_faces"],
+            "face_absent_ratio":     face_result["face_absent_ratio"],
+            "multiple_face_ratio":   face_result["multiple_face_ratio"],
+            "face_attention_score":  face_result["face_attention_score"],
+            "status":                face_result["status"],
+        }
 
         # ── Step D: LLM evaluation (GPT) ──────────────────────────────────────
         print(f"[Pipeline] {session_id}/{question_id} – LLM evaluation …")
@@ -176,8 +145,7 @@ async def process_video(
         temp_answer = Answer(
             question_id=question_id,
             question_text=question_text,
-            transcript=whisper_result["transcript"],
-            confidence_index=None,
+            confidence_index=emotion_result["confidence_index"],
             hesitation_score=whisper_result["hesitation_score"],
             llm_evaluation=llm_eval,
         )
@@ -192,11 +160,6 @@ async def process_video(
             {"_id": ObjectId(session_id), "answers.question_id": question_id},
             {"$set": update_fields},   # $set updates only the specified fields
         )
-
-        # Update session's running final score immediately
-        # This ensures final_score is never stale even if finalize_session isn't called
-        await _update_session_score(session_id, db)
-
         print(f"[Pipeline] {session_id}/{question_id} – done ✓ (score={answer_score})")
 
     except Exception as exc:
@@ -272,7 +235,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
         ans = Answer(
             question_id=a.get("question_id", ""),
             question_text=a.get("question_text", ""),
-            confidence_index=a.get("confidence_index"),
+            confidence_index=a.get("confidence_index", 0.0),
             hesitation_score=a.get("hesitation_score", 0.0),
             llm_evaluation=llm_eval,
             answer_final_score=stored_score,

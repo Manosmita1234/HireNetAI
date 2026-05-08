@@ -44,8 +44,8 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
 
     # FPS = frames per second of the video (usually 25 or 30)
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    # We analyze 1 frame per second, so we skip `frame_interval` frames between each analysis
-    frame_interval = int(fps)   # e.g. fps=25 → analyze every 25th frame
+    # We analyze 1 frame every 5th frame to reduce processing time
+    frame_interval = 5   # analyze every 5th frame
 
     frame_emotions: List[Dict[str, Any]] = []  # per-frame results
     emotion_totals: Dict[str, float] = {}       # running total of each emotion score across all frames
@@ -57,7 +57,7 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
         if not ret:
             break
 
-        # Only process every `frame_interval`-th frame (approximately 1 per second)
+        # Only process every `frame_interval`-th frame (every 5th frame)
         if frame_index % frame_interval == 0:
             timestamp = frame_index / fps  # time in seconds from the start of the video
 

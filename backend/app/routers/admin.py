@@ -24,7 +24,6 @@ from fastapi.responses import Response, StreamingResponse  # for binary (PDF, vi
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
-from app.config import get_settings
 from app.database import get_database
 from app.utils.auth import require_admin       # enforces admin-only access
 from app.utils.helpers import mongo_doc_to_dict
@@ -95,7 +94,7 @@ async def stream_video(
       - Finds the answer document inside the session using MongoDB's positional operator
       - Reads the video file path from the answer (stored at upload time)
       - Uses StreamingResponse with a generator to send the file in 64 KB chunks
-        (more memory-efficient than reading the entire file into memory before sending)
+        (more memory-efficient than reading the entire file at once)
 
     The <video> element in CandidateDetail.jsx uses this URL as its src.
     """
@@ -110,64 +109,14 @@ async def stream_video(
 
     answer = doc["answers"][0]
     video_path = answer.get("video_path")
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Video not available")
 
     from pathlib import Path
-    settings = get_settings()
-    upload_dir = Path(settings.upload_path)
-    
-    # Search for the video file using multiple strategies
-    possible_paths = []
-    safe_qid = "".join(c for c in question_id if c.isalnum() or c in "-_")
-    
-    # 1. If stored path exists, use it directly
-    if video_path:
-        p = Path(video_path)
-        if p.exists():
-            possible_paths.append(p)
-        # Try normalized path (forward slashes)
-        p_norm = Path(video_path.replace('\\', '/'))
-        if p_norm.exists():
-            possible_paths.append(p_norm)
-    
-    # 2. Search session directory for any file matching the question_id
-    # Try both the original question_id and sanitized versions
-    session_dir = upload_dir / session_id
-    if session_dir.exists():
-        for f in session_dir.iterdir():
-            if not f.is_file():
-                continue
-            # Match if filename starts with question_id or safe_qid (without extension)
-            fname_without_ext = f.stem
-            if (fname_without_ext == question_id or 
-                fname_without_ext == safe_qid or
-                question_id.startswith(fname_without_ext) or
-                safe_qid.startswith(fname_without_ext)):
-                possible_paths.append(f)
-                break
-    
-    # 3. Try session_id/question_id with common video extensions
-    for ext in ['.webm', '.mp4', '.mkv', '.avi']:
-        p = upload_dir / session_id / f"{question_id}{ext}"
-        if p.exists():
-            possible_paths.append(p)
-        p_safe = upload_dir / session_id / f"{safe_qid}{ext}"
-        if p_safe.exists():
-            possible_paths.append(p_safe)
-    
-    # 4. Try direct search in session directory for any video file
-    if not possible_paths and session_dir.exists():
-        for f in session_dir.iterdir():
-            if f.is_file() and f.suffix.lower() in ['.webm', '.mp4', '.mkv', '.avi']:
-                possible_paths.append(f)
-                break
-    
-    if not possible_paths:
-        print(f"[stream_video] Video file not found. session_id={session_id}, question_id={question_id}, stored_path={video_path}")
-        raise HTTPException(status_code=404, detail="Video file not found")
-    
-    p = possible_paths[0]
-    print(f"[stream_video] Serving video from: {p}")
-    
+    p = Path(video_path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
     # Generator function: yields 64 KB chunks of the video file one at a time
     # This avoids loading the entire video into memory before sending
     def iter_file():
@@ -216,8 +165,8 @@ async def download_report(
             question_text=a.get("question_text", ""),
             transcript=a.get("transcript"),
             emotion_distribution=a.get("emotion_distribution", {}),
-            confidence_index=a.get("confidence_index"),
-            nervousness_score=a.get("nervousness_score"),
+            confidence_index=a.get("confidence_index", 0.0),
+            nervousness_score=a.get("nervousness_score", 0.0),
             pause_count=a.get("pause_count", 0),
             long_pauses=a.get("long_pauses", []),
             hesitation_score=a.get("hesitation_score", 0.0),
@@ -461,7 +410,7 @@ async def reaggregate_session(
         ans = Answer(
             question_id=a.get("question_id", ""),
             question_text=a.get("question_text", ""),
-            confidence_index=a.get("confidence_index"),
+            confidence_index=a.get("confidence_index", 0.0),
             hesitation_score=a.get("hesitation_score", 0.0),
             llm_evaluation=llm_eval,
             answer_final_score=stored_score,

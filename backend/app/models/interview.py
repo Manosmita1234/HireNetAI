@@ -50,13 +50,19 @@ class Answer(BaseModel):
     # Emotion analysis
     frame_emotions: List[FrameEmotion] = []
     emotion_distribution: Dict[str, float] = {}
-    confidence_index: Optional[float] = None
-    nervousness_score: Optional[float] = None
+    confidence_index: float = 0.0
+    nervousness_score: float = 0.0
 
     # Hesitation
     pause_count: int = 0
     long_pauses: List[Dict[str, float]] = []
     hesitation_score: float = 0.0
+
+    # OpenCV face analysis (face_analysis_service)
+    # Shape: { total_frames_analyzed, frames_with_face, frames_without_face,
+    #          frames_multiple_faces, face_absent_ratio, multiple_face_ratio,
+    #          face_attention_score, status }
+    face_analytics: Optional[Dict[str, Any]] = None
 
     # LLM
     llm_evaluation: Optional[LLMEvaluation] = None

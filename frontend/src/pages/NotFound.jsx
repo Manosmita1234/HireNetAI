@@ -1,31 +1,21 @@
 /**
  * pages/NotFound.jsx – The 404 "Page Not Found" screen.
- *
- * React Router shows this page automatically (via the "*" wildcard route in App.jsx)
- * when a user navigates to any URL that doesn't match any known route.
- * e.g. visiting /wrong-url will show this page instead of a blank screen.
  */
 
-import { Link } from 'react-router-dom'  // Link renders a clickable navigation link
-import { Brain } from 'lucide-react'     // Brain icon (HireNetAI logo)
+import { Link } from 'react-router-dom'
+import { Brain } from 'lucide-react'
 
 export default function NotFound() {
     return (
-        // Full-screen dark animated background, text centered
-        <div className="min-h-screen animated-bg flex items-center justify-center text-white">
-            {/* Card container with glass effect and neon border */}
-            <div className="text-center glass rounded-3xl p-12 neon-border">
-                {/* Decorative brain icon */}
-                <Brain className="w-16 h-16 text-brand-400 mx-auto mb-4" />
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+            <div className="text-center bg-white rounded-3xl p-12 border border-slate-200 shadow-sm">
+                <Brain className="w-16 h-16 text-blue-600 mx-auto mb-4" />
 
-                {/* Large "404" number */}
-                <h1 className="text-6xl font-black gradient-text mb-4">404</h1>
+                <h1 className="text-6xl font-black text-slate-800 mb-4">404</h1>
 
-                {/* Short explanation */}
-                <p className="text-brand-300 mb-8">Oops! This page doesn't exist.</p>
+                <p className="text-slate-500 mb-8">Oops! This page doesn't exist.</p>
 
-                {/* Button to go back to the home page */}
-                <Link to="/" className="bg-brand-600 hover:bg-brand-500 px-6 py-3 rounded-xl font-semibold transition-colors">
+                <Link to="/" className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold transition-colors text-white">
                     Go Home
                 </Link>
             </div>

@@ -449,7 +449,7 @@ async def upload_resume(
         candidate_email=candidate_email,
         role_applied="Resume Upload Session",  # placeholder since no specific role was given
     )
-    result = await db["sessions"].insert_one(session.model_dump(exclude={"id"}))
+    result = await db["sessions"].insert_one(session.model_dump())
     session_id = str(result.inserted_id)
 
     # ── Store questions in the session_questions collection ────────────────────

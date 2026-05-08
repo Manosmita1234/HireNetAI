@@ -23,11 +23,7 @@ Background processing (process_video in video_processor.py):
   - Updates the answer in MongoDB with all results, sets processed=True
 """
 
-import os
 import shutil   # used for copying file content (shutil.copyfileobj is efficient for large files)
-import subprocess
-import tempfile
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, BackgroundTasks
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -42,52 +38,6 @@ from app.services.video_processor import process_video
 
 settings = get_settings()
 router = APIRouter(prefix="/upload", tags=["Upload"])
-
-
-def fix_webm_file(video_path: str) -> bool:
-    """
-    Fix WebM files recorded by MediaRecorder that lack proper metadata (duration, etc.).
-    MediaRecorder often creates WebM files that aren't properly finalized, causing
-    video players to fail while audio still works.
-    
-    Uses ffmpeg to re-mux the file with proper WebM headers.
-    Returns True if fix was successful, False otherwise.
-    """
-    try:
-        input_path = Path(video_path)
-        if not input_path.exists():
-            return False
-        
-        # Create temp file in same directory
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.webm', dir=input_path.parent)
-        Path(temp_path).unlink()  # Remove the temp file, ffmpeg will create it
-        os.close(temp_fd)
-        
-        # Re-mux the WebM file with proper headers
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', str(input_path),
-            '-c', 'copy',
-            '-f', 'webm',
-            temp_path
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        
-        if result.returncode == 0 and Path(temp_path).exists():
-            # Replace original with fixed version
-            shutil.move(temp_path, input_path)
-            print(f"[Upload] Fixed WebM file: {video_path}")
-            return True
-        else:
-            print(f"[Upload] Failed to fix WebM: {result.stderr}")
-            if Path(temp_path).exists():
-                Path(temp_path).unlink()
-            return False
-            
-    except Exception as e:
-        print(f"[Upload] Error fixing WebM: {e}")
-        return False
 
 
 @router.post("/answer", response_model=UploadAnswerResponse, status_code=202)
@@ -135,19 +85,13 @@ async def upload_answer(
 
     print(f"[Upload] Saved {video_path} ({video_path.stat().st_size} bytes)")
 
-    # Fix WebM file to ensure it's properly finalized (MediaRecorder often creates files without proper headers)
-    fix_webm_file(str(video_path))
-
-    # Store absolute path using upload_dir as base (more reliable than CWD-based resolve)
-    video_path_abs = (settings.upload_path / session_id / video_filename).resolve()
-
     # ── Insert Answer stub into the session document ───────────────────────────
     # The stub marks the answer as received but not yet processed (processed=False)
     # MongoDB's $push operator appends to the "answers" array in the session document
     answer = Answer(
         question_id=question_id,
         question_text=question_text,
-        video_path=str(video_path_abs),  # absolute path to the .webm file on disk
+        video_path=str(video_path),  # full path to the .webm file on disk
         processed=False,             # will be set to True after AI pipeline completes
     )
     await db["sessions"].update_one(
@@ -166,7 +110,7 @@ async def upload_answer(
         process_video,
         session_id=session_id,
         question_id=question_id,
-        video_path=str(video_path_abs),
+        video_path=str(video_path),
         question_text=question_text,
         db=db,
     )
