@@ -86,7 +86,7 @@ def _extract_frames(video_path: str) -> list:
             "-loglevel", "error",   # suppress info/warning spam
         ]
 
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
         if proc.returncode != 0:
             # ffmpeg can return non-zero for harmless warnings; log and continue
             print(f"[FaceAnalysis] ffmpeg note: {proc.stderr[:250]}")
@@ -179,13 +179,13 @@ def analyze_video_faces(video_path: str) -> Dict[str, Any]:
         frames = _extract_frames(video_path)
 
         if not frames:
-            print("[FaceAnalysis] No frames extracted — video may be empty or unreadable")
+            print("[FaceAnalysis] No frames extracted - video may be empty or unreadable")
             result["status"] = "no_frames"
             return result
 
         total = len(frames)
         result["total_frames_analyzed"] = total
-        print(f"[FaceAnalysis] Analysing {total} frames …")
+        print(f"[FaceAnalysis] Analysing {total} frames ...")
 
         # ── Count faces in every sampled frame ────────────────────────────────
         for frame in frames:
@@ -199,17 +199,17 @@ def analyze_video_faces(video_path: str) -> Dict[str, Any]:
                 result["frames_multiple_faces"] += 1   # but someone else is too
 
         # ── Compute ratios ────────────────────────────────────────────────────
-        result["face_absent_ratio"]   = round(result["frames_without_face"]   / total, 3)
-        result["multiple_face_ratio"] = round(result["frames_multiple_faces"] / total, 3)
+        result["face_absent_ratio"]   = round(float(result["frames_without_face"])   / float(total), 3)
+        result["multiple_face_ratio"] = round(float(result["frames_multiple_faces"]) / float(total), 3)
 
         # ── Compute face attention score (0–10) ───────────────────────────────
-        face_present_ratio = 1.0 - result["face_absent_ratio"]
-        penalty            = result["multiple_face_ratio"] * 3.0
+        face_present_ratio = 1.0 - float(result["face_absent_ratio"])
+        penalty            = float(result["multiple_face_ratio"]) * 3.0
         score              = max(0.0, min(10.0, (face_present_ratio * 10.0) - penalty))
-        result["face_attention_score"] = round(score, 2)
+        result["face_attention_score"] = round(float(score), 2)
 
         print(
-            f"[FaceAnalysis] ✓  present={result['frames_with_face']}/{total}  "
+            f"[FaceAnalysis] OK  present={result['frames_with_face']}/{total}  "
             f"absent={result['frames_without_face']}  "
             f"multi={result['frames_multiple_faces']}  "
             f"score={result['face_attention_score']}"

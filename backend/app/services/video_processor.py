@@ -57,7 +57,7 @@ def _extract_audio_sync(video_path: str, audio_path: str) -> None:
         "-ac", "1",             # mono audio
         audio_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr[:500]}")
 
@@ -89,7 +89,7 @@ async def process_video(
 
     try:
         # ── Step A: Extract audio using ffmpeg ────────────────────────────────
-        print(f"[Pipeline] {session_id}/{question_id} – extracting audio …")
+        print(f"[Pipeline] {session_id}/{question_id} - extracting audio ...")
         # run_in_executor: run the blocking subprocess call in a thread pool
         # so the event loop isn't blocked while ffmpeg runs
         loop = asyncio.get_event_loop()
@@ -97,7 +97,7 @@ async def process_video(
         update_fields["answers.$.audio_path"] = audio_path  # save path for reference
 
         # ── Step B: Speech-to-text + hesitation detection (WhisperX) ─────────
-        print(f"[Pipeline] {session_id}/{question_id} – transcribing …")
+        print(f"[Pipeline] {session_id}/{question_id} - transcribing ...")
         whisper_result = await whisper_service.transcribe_audio(audio_path)
         # The "answers.$." syntax uses MongoDB's positional operator:
         # it updates the specific answer sub-document that matched the query filter
@@ -108,7 +108,7 @@ async def process_video(
         update_fields["answers.$.hesitation_score"] = whisper_result["hesitation_score"]
 
         # ── Step C: Facial emotion analysis (DeepFace) ─────────────────────────
-        print(f"[Pipeline] {session_id}/{question_id} – analyzing emotions …")
+        print(f"[Pipeline] {session_id}/{question_id} - analyzing emotions ...")
         emotion_result = await emotion_service.analyze_video_emotions(video_path)
         update_fields["answers.$.frame_emotions"]       = emotion_result["frame_emotions"]
         update_fields["answers.$.emotion_distribution"] = emotion_result["emotion_distribution"]
@@ -116,7 +116,7 @@ async def process_video(
         update_fields["answers.$.nervousness_score"]    = emotion_result["nervousness_score"]
 
         # ── Step C2: OpenCV Haar Cascade face detection ──────────────────────────
-        print(f"[Pipeline] {session_id}/{question_id} – detecting faces …")
+        print(f"[Pipeline] {session_id}/{question_id} - detecting faces ...")
         face_result = await asyncio.get_event_loop().run_in_executor(
             None, face_analysis_service.analyze_video_faces, video_path
         )
@@ -132,7 +132,7 @@ async def process_video(
         }
 
         # ── Step D: LLM evaluation (GPT) ──────────────────────────────────────
-        print(f"[Pipeline] {session_id}/{question_id} – LLM evaluation …")
+        print(f"[Pipeline] {session_id}/{question_id} - LLM evaluation ...")
         llm_eval = await llm_service.evaluate_answer(
             question=question_text,
             transcript=whisper_result["transcript"],  # what the candidate actually said
@@ -145,6 +145,7 @@ async def process_video(
         temp_answer = Answer(
             question_id=question_id,
             question_text=question_text,
+            transcript=whisper_result["transcript"],
             confidence_index=emotion_result["confidence_index"],
             hesitation_score=whisper_result["hesitation_score"],
             llm_evaluation=llm_eval,
@@ -160,7 +161,7 @@ async def process_video(
             {"_id": ObjectId(session_id), "answers.question_id": question_id},
             {"$set": update_fields},   # $set updates only the specified fields
         )
-        print(f"[Pipeline] {session_id}/{question_id} – done ✓ (score={answer_score})")
+        print(f"[Pipeline] {session_id}/{question_id} - done OK (score={answer_score})")
 
     except Exception as exc:
         # Even on failure, mark as processed so polling stops waiting
@@ -202,7 +203,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
     # We poll MongoDB every 5 seconds (up to 10 minutes) until all answers
     # have processed=True before computing scores or exporting the JSON.
     expected_count = len(doc.get("answers", []))
-    print(f"[Pipeline] Session {session_id} – waiting for {expected_count} answers to finish processing …")
+    print(f"[Pipeline] Session {session_id} - waiting for {expected_count} answers to finish processing ...")
     for attempt in range(120):  # 120 × 5s = 10 minutes max
         fresh = await db["sessions"].find_one({"_id": ObjectId(session_id)})
         if not fresh:
@@ -210,13 +211,13 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
         raw = fresh.get("answers", [])
         done = sum(1 for a in raw if a.get("processed", False))
         if done >= expected_count:
-            print(f"[Pipeline] Session {session_id} – all {done}/{expected_count} answers processed ✓")
+            print(f"[Pipeline] Session {session_id} - all {done}/{expected_count} answers processed OK")
             doc = fresh  # use the freshest data
             break
-        print(f"[Pipeline] Session {session_id} – {done}/{expected_count} processed, waiting 5s …")
+        print(f"[Pipeline] Session {session_id} - {done}/{expected_count} processed, waiting 5s ...")
         await asyncio.sleep(5)
     else:
-        print(f"[Pipeline] Session {session_id} – timed out waiting for answers; proceeding with partial data")
+        print(f"[Pipeline] Session {session_id} - timed out waiting for answers; proceeding with partial data")
         doc = await db["sessions"].find_one({"_id": ObjectId(session_id)}) or doc
 
     # ── Step 1: Aggregate per-answer scores ────────────────────────────────────
@@ -245,7 +246,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
         if stored_score == 0.0 and llm_eval is not None:
             recomputed = scoring_service.score_single_answer(ans)
             ans.answer_final_score = recomputed
-            print(f"[Pipeline] Re-scored {a.get('question_id')} → {recomputed} (was 0.0)")
+            print(f"[Pipeline] Re-scored {a.get('question_id')} -> {recomputed} (was 0.0)")
             # Write corrected score back to MongoDB
             await db["sessions"].update_one(
                 {"_id": ObjectId(session_id), "answers.question_id": a.get("question_id")},
@@ -269,12 +270,12 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
             }
         },
     )
-    print(f"[Pipeline] Session {session_id} finalized – {agg}")
+    print(f"[Pipeline] Session {session_id} - finalized - {agg}")
 
     # ── Step 2: Holistic AI evaluation across all Q&A pairs ───────────────────
     # This sends ALL questions + answers + emotion summaries to GPT in one call
     # for an overall written assessment of the candidate.
-    print(f"[Pipeline] Session {session_id} – running holistic evaluation …")
+    print(f"[Pipeline] Session {session_id} - running holistic evaluation ...")
     try:
         qa_items = []
         for idx, a in enumerate(raw_answers, start=1):
@@ -287,7 +288,6 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
                 emotion_summary = ""
 
             conf_idx: float = a.get("confidence_index", 0.0)
-            # Convert numeric confidence_index (0–10) to human-readable label
             conf_str = "high" if conf_idx >= 7 else ("medium" if conf_idx >= 4 else "low")
 
             qa_items.append(
@@ -320,7 +320,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
             },
         )
         print(
-            f"[Pipeline] Session {session_id} – holistic eval done "
+            f"[Pipeline] Session {session_id} - holistic eval done "
             f"(score={holistic.overall_score}, decision={holistic.decision})"
         )
 
@@ -334,7 +334,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
     #   uploads/<session_id>/transcript.json
     # This mirrors the ISP blueprint (github.com/Imtry100/ISP) approach of keeping
     # transcripts/ next to the video/ folder for easy offline access and re-processing.
-    print(f"[Pipeline] Session {session_id} – exporting transcript.json …")
+    print(f"[Pipeline] Session {session_id} - exporting transcript.json ...")
     json_path = None
     try:
         from app.services.json_scoring_service import export_session_json
@@ -352,7 +352,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
                 {"_id": ObjectId(session_id)},
                 {"$set": {"transcript_json_path": str(json_path)}},
             )
-            print(f"[Pipeline] Session {session_id} – transcript.json saved to {json_path}")
+            print(f"[Pipeline] Session {session_id} - transcript.json saved to {json_path}")
     except Exception as exc:
         print(f"[Pipeline] WARNING: JSON export failed for {session_id}: {exc}")
 
@@ -361,7 +361,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
     # Returns: { role_fit_score (0-100), decision, strengths, concerns, recommendation }
     # Stored on the session as session.role_fit_result.
     if json_path is not None:
-        print(f"[Pipeline] Session {session_id} – running role-fit scoring from JSON …")
+        print(f"[Pipeline] Session {session_id} - running role-fit scoring from JSON ...")
         try:
             from app.services.json_scoring_service import score_from_json
 
@@ -377,7 +377,7 @@ async def finalize_session(session_id: str, db: AsyncIOMotorDatabase) -> None:
                 },
             )
             print(
-                f"[Pipeline] Session {session_id} – role-fit done "
+                f"[Pipeline] Session {session_id} - role-fit done "
                 f"({role_fit.get('decision')} | score={role_fit.get('role_fit_score')})"
             )
         except Exception as exc:

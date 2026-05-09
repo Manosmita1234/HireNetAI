@@ -13,6 +13,7 @@ import {
 } from 'chart.js'
 import { ArrowLeft, Download, Play, FileText, Brain, ChevronDown, ChevronUp, RefreshCw, FileJson, CheckCircle, XCircle, AlertCircle, Eye, EyeOff, User, VolumeX, ShieldAlert } from 'lucide-react'
 import { adminAPI } from '../services/api'
+import api from '../services/api'
 
 ChartJS.register(
     ArcElement, Tooltip, Legend, CategoryScale, LinearScale,
@@ -61,8 +62,24 @@ function ScoreBar({ label, value, max = 10 }) {
 
 function AnswerCard({ answer, sessionId, index }) {
     const [open, setOpen] = useState(index === 0)
+    const [blobUrl, setBlobUrl]       = useState(null)
+    const [videoLoading, setVideoLoading] = useState(false)
+    const [videoError, setVideoError]   = useState(false)
 
-    const videoUrl = adminAPI.getVideoUrl(sessionId, answer.question_id)
+    // Fetch video blob via axios (sends JWT header) when the card first opens.
+    // A plain <video src={url}> would skip the Authorization header → 401.
+    useEffect(() => {
+        if (!open || blobUrl || videoError) return
+        setVideoLoading(true)
+        api.get(`/admin/session/${sessionId}/video/${answer.question_id}`, { responseType: 'blob' })
+            .then(({ data }) => setBlobUrl(URL.createObjectURL(data)))
+            .catch(() => setVideoError(true))
+            .finally(() => setVideoLoading(false))
+    }, [open, blobUrl, videoError, sessionId, answer.question_id])
+
+    // Revoke the blob URL when the component unmounts to free memory
+    useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl) }, [blobUrl])
+
     const ev = answer.llm_evaluation
 
     const emoLabels = Object.keys(answer.emotion_distribution || {})
@@ -122,12 +139,29 @@ function AnswerCard({ answer, sessionId, index }) {
             {open && (
                 <div className="px-6 pb-6 space-y-6">
 
-                    {answer.video_path && (
-                        <div>
-                            <h3 className="text-sm font-semibold text-slate-600 mb-2 flex items-center gap-2"><Play className="w-3.5 h-3.5" /> Recorded Answer</h3>
-                            <video src={videoUrl} controls className="w-full rounded-xl max-h-64 bg-slate-100" />
-                        </div>
-                    )}
+                    {/* ── Video Player ─────────────────────────────── */}
+                    <div>
+                        <h3 className="text-sm font-semibold text-slate-600 mb-2 flex items-center gap-2">
+                            <Play className="w-3.5 h-3.5" /> Recorded Answer
+                        </h3>
+                        {videoLoading && (
+                            <div className="w-full rounded-xl h-36 bg-slate-100 flex items-center justify-center">
+                                <span className="w-6 h-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+                            </div>
+                        )}
+                        {blobUrl && !videoLoading && (
+                            <video
+                                src={blobUrl}
+                                controls
+                                className="w-full rounded-xl max-h-64 bg-slate-900"
+                            />
+                        )}
+                        {videoError && !videoLoading && (
+                            <div className="w-full rounded-xl h-20 bg-slate-50 border border-slate-200 flex items-center justify-center text-sm text-slate-400">
+                                Video not available
+                            </div>
+                        )}
+                    </div>
 
                     <div>
                         <h3 className="text-sm font-semibold text-slate-600 mb-2 flex items-center gap-2"><FileText className="w-3.5 h-3.5" /> Transcript</h3>
@@ -136,14 +170,7 @@ function AnswerCard({ answer, sessionId, index }) {
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 text-center">
-                        {[{ label: 'Nervousness', value: answer.nervousness_score?.toFixed(1) }].map(m => (
-                            <div key={m.label} className="bg-slate-50 rounded-xl p-3 border border-slate-200">
-                                <p className="text-2xl font-bold text-slate-800">{m.value}</p>
-                                <p className="text-slate-400 text-xs mt-1">{m.label} /10</p>
-                            </div>
-                        ))}
-                    </div>
+
 
                     <div className="grid md:grid-cols-2 gap-6">
                         {emoLabels.length > 0 && (

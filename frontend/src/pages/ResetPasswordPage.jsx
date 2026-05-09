@@ -157,7 +157,7 @@ export default function ResetPasswordPage() {
 
                             {form.confirm_password.length > 0 && (
                                 <p className={`text-xs mt-1.5 ${form.new_password === form.confirm_password ? 'text-green-600' : 'text-red-600'}`}>
-                                    {form.new_password === form.confirm_password ? '✓ Passwords match' : '✗ Passwords do not match'}
+                                    {form.new_password === form.confirm_password ? 'OK Passwords match' : 'X Passwords do not match'}
                                 </p>
                             )}
                         </div>

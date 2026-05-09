@@ -4,6 +4,22 @@ main.py – FastAPI application entry point.
 Starts the app, registers routers, handles CORS, and manages DB lifecycle.
 """
 
+import sys
+import io
+
+# ── Force UTF-8 console output on Windows ────────────────────────────────────
+# On Windows the default console encoding is cp1252 (charmap), which cannot
+# encode Unicode characters like ✓, —, or smart quotes that WhisperX and
+# other libraries print as progress/status messages.
+# Without this fix the UnicodeEncodeError propagates into the video pipeline's
+# except block and gets stored as the candidate's "transcript", showing the
+# admin [ERROR: 'charmap' codec can't encode character '\u2713'...] instead of
+# the real transcription.
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

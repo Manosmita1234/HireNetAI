@@ -341,7 +341,7 @@ async def rescore_session(
 
     # If the JSON file doesn't exist yet, re-export it from the DB data
     if json_path is None or not json_path.exists():
-        print(f"[Rescore] transcript.json missing — re-exporting for session {session_id}")
+        print(f"[Rescore] transcript.json missing - re-exporting for session {session_id}")
         json_path = export_session_json(
             session_id=session_id,
             session_doc=doc,
@@ -410,10 +410,12 @@ async def reaggregate_session(
         ans = Answer(
             question_id=a.get("question_id", ""),
             question_text=a.get("question_text", ""),
+            transcript=a.get("transcript"),
             confidence_index=a.get("confidence_index", 0.0),
             hesitation_score=a.get("hesitation_score", 0.0),
             llm_evaluation=llm_eval,
             answer_final_score=stored_score,
+            face_analytics=a.get("face_analytics"),
         )
 
         # Recompute score if it's 0 but LLM data exists
@@ -444,4 +446,96 @@ async def reaggregate_session(
         "final_score":       agg["final_score"],
         "category":          agg["category"],
         "answers_rescored":  recomputed_count,
+    }
+
+
+@router.post("/rescore-all")
+async def rescore_all_sessions(
+    admin: dict = Depends(require_admin),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """
+    Bulk repair all sessions whose answers have answer_final_score=0.0 despite
+    having valid LLM evaluation data (caused by the missing transcript bug).
+
+    For every session, each zero-scored answer with LLM data is recomputed
+    using the correct weighted formula, then the session aggregate is updated.
+
+    Returns a summary of what was fixed.
+    """
+    from app.services import scoring_service
+    from app.models.interview import LLMEvaluation, Answer
+
+    sessions_fixed = 0
+    answers_rescored = 0
+    errors = []
+
+    cursor = db["sessions"].find({})
+    async for doc in cursor:
+        session_id = str(doc["_id"])
+        raw_answers = doc.get("answers", [])
+        if not raw_answers:
+            continue
+
+        session_changed = False
+        for a in raw_answers:
+            llm_data = a.get("llm_evaluation")
+            llm_eval = LLMEvaluation(**llm_data) if llm_data else None
+            stored_score = a.get("answer_final_score", 0.0)
+
+            ans = Answer(
+                question_id=a.get("question_id", ""),
+                question_text=a.get("question_text", ""),
+                transcript=a.get("transcript"),
+                confidence_index=a.get("confidence_index", 0.0),
+                hesitation_score=a.get("hesitation_score", 0.0),
+                llm_evaluation=llm_eval,
+                answer_final_score=stored_score,
+                face_analytics=a.get("face_analytics"),
+            )
+
+            if stored_score == 0.0 and llm_eval is not None:
+                try:
+                    new_score = scoring_service.score_single_answer(ans)
+                    await db["sessions"].update_one(
+                        {"_id": ObjectId(session_id), "answers.question_id": a.get("question_id")},
+                        {"$set": {"answers.$.answer_final_score": new_score}},
+                    )
+                    ans.answer_final_score = new_score
+                    answers_rescored += 1
+                    session_changed = True
+                except Exception as e:
+                    errors.append(f"{session_id}/{a.get('question_id')}: {e}")
+
+        if session_changed:
+            # Re-aggregate session score
+            fresh = await db["sessions"].find_one({"_id": ObjectId(session_id)})
+            if fresh:
+                raw = fresh.get("answers", [])
+                answers = []
+                for a in raw:
+                    llm_d = a.get("llm_evaluation")
+                    llm_e = LLMEvaluation(**llm_d) if llm_d else None
+                    answers.append(Answer(
+                        question_id=a.get("question_id", ""),
+                        question_text=a.get("question_text", ""),
+                        transcript=a.get("transcript"),
+                        confidence_index=a.get("confidence_index", 0.0),
+                        hesitation_score=a.get("hesitation_score", 0.0),
+                        llm_evaluation=llm_e,
+                        answer_final_score=a.get("answer_final_score", 0.0),
+                        face_analytics=a.get("face_analytics"),
+                    ))
+                agg = scoring_service.aggregate_session_score(answers)
+                await db["sessions"].update_one(
+                    {"_id": ObjectId(session_id)},
+                    {"$set": {"final_score": agg["final_score"], "category": agg["category"]}},
+                )
+                sessions_fixed += 1
+
+    return {
+        "message":           f"Rescored {answers_rescored} answer(s) across {sessions_fixed} session(s)",
+        "sessions_fixed":    sessions_fixed,
+        "answers_rescored":  answers_rescored,
+        "errors":           errors,
     }

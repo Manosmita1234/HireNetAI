@@ -95,9 +95,6 @@ export default function AdminDashboard() {
             ? (sortAsc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)
             : <ChevronDown className="w-3 h-3 text-slate-300" />
 
-    const avgScore = candidates.length
-        ? (candidates.reduce((s, c) => s + (c.final_score || 0), 0) / candidates.length).toFixed(1)
-        : '—'
 
     const recommended = candidates.filter(c =>
         ['Highly Recommended', 'Recommended'].includes(c.category)
@@ -130,19 +127,18 @@ export default function AdminDashboard() {
 
             <div className="max-w-7xl mx-auto px-6 py-10">
 
-                <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="grid grid-cols-2 gap-6 mb-8 max-w-xl mx-auto">
                     {[
                         { label: 'Total Candidates', value: candidates.length, icon: Users },
-                        { label: 'Avg Score',        value: avgScore + ' / 10', icon: Brain },
-                        { label: 'Recommended',      value: recommended, icon: ChevronUp },
+                        { label: 'Recommended',      value: recommended,       icon: ChevronUp },
                     ].map((s, i) => (
                         <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-                            className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                            <div className="flex items-center gap-2 mb-2">
+                            className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                            <div className="flex items-center gap-2 mb-3">
                                 <s.icon className="w-4 h-4 text-slate-400" />
                                 <span className="text-slate-500 text-sm">{s.label}</span>
                             </div>
-                            <p className="text-3xl font-bold text-slate-800">{s.value}</p>
+                            <p className="text-4xl font-bold text-slate-800">{s.value}</p>
                         </motion.div>
                     ))}
                 </div>

@@ -19,7 +19,7 @@ async def connect_db() -> None:
     try:
         # Trigger a lightweight command to verify connectivity
         await _client.admin.command("ping")
-        print("[DB] Connected to MongoDB ✓")
+        print("[DB] Connected to MongoDB OK")
     except Exception as e:
         # Non-fatal: warn but keep the client so connections are retried per-request
         print(f"[DB] WARNING: Could not ping MongoDB: {e}")

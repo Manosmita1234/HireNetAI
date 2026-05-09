@@ -228,6 +228,15 @@ export default function InterviewRoom() {
         }
     }, [questions, currentIdx, sessionId, flushAllEvents])
 
+    // Auto-upload as soon as recording stops (STATUS.RECORDED).
+    // Without this, the status stays RECORDED forever and the
+    // "Next Question" button (which requires STATUS.UPLOADED) never appears.
+    useEffect(() => {
+        if (recordStatus === STATUS.RECORDED) {
+            uploadAnswer()
+        }
+    }, [recordStatus, uploadAnswer])
+
     const nextQuestion = () => {
         setRecordStatus(STATUS.IDLE)
         setTimer(0)
@@ -405,8 +414,15 @@ export default function InterviewRoom() {
                                             </div>
                                         )}
                                         {faceDetection.faceStatus === 'absent' && (
-                                            <div className="flex items-center gap-1 bg-red-500 rounded-full px-2 py-1" title="No face detected">
+                                            <div className="flex items-center gap-1 bg-red-500 rounded-full px-2 py-1" title="No face detected — please stay in frame">
                                                 <User className="w-3 h-3 text-white" />
+                                                <span className="text-white text-xs font-medium">No Face</span>
+                                            </div>
+                                        )}
+                                        {faceDetection.faceStatus === 'multiple' && (
+                                            <div className="flex items-center gap-1 bg-amber-500 rounded-full px-2 py-1" title="Multiple faces detected">
+                                                <User className="w-3 h-3 text-white" />
+                                                <span className="text-white text-xs font-medium">Multi-Face</span>
                                             </div>
                                         )}
                                         {voiceActivity.voiceStatus === 'silent' && (
@@ -512,11 +528,14 @@ export default function InterviewRoom() {
                                                 <span>Tab {tabSwitch.isTabVisible ? 'visible' : 'switched'}</span>
                                             </div>
                                             <div className="flex items-center gap-1">
-                                                {faceDetection.faceStatus === 'present'
-                                                    ? <User className="w-3.5 h-3.5 text-green-500" />
-                                                    : <User className="w-3.5 h-3.5 text-red-500" />
-                                                }
-                                                <span>Face {faceDetection.faceStatus === 'present' ? 'detected' : 'absent'}</span>
+                                                {faceDetection.faceStatus === 'present' && <User className="w-3.5 h-3.5 text-green-500" />}
+                                                {faceDetection.faceStatus === 'absent'   && <User className="w-3.5 h-3.5 text-red-500" />}
+                                                {faceDetection.faceStatus === 'multiple' && <User className="w-3.5 h-3.5 text-amber-500" />}
+                                                <span className={faceDetection.faceStatus === 'absent' ? 'text-red-500' : faceDetection.faceStatus === 'multiple' ? 'text-amber-500' : ''}>
+                                                    {faceDetection.faceStatus === 'present' ? 'Face detected'
+                                                        : faceDetection.faceStatus === 'absent' ? 'No face — move closer'
+                                                        : 'Multiple faces!'}
+                                                </span>
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 {voiceActivity.voiceStatus === 'active'

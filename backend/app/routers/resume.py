@@ -465,7 +465,7 @@ async def upload_resume(
             "order":                    i + 1,        # 1-indexed ordering
         })
 
-    print(f"[Resume] Session {session_id} created — {len(questions_list)} questions, skills: {skills_detected}")
+    print(f"[Resume] Session {session_id} created - {len(questions_list)} questions, skills: {skills_detected}")
 
     return {
         "session_id":          session_id,

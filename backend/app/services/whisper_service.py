@@ -22,9 +22,24 @@ Why run in a thread pool?
 import asyncio
 from typing import Dict, List, Any
 
+import numpy as np
+
 from app.config import get_settings
 
 settings = get_settings()
+
+
+def _to_native(value):
+    """Convert numpy types to native Python types for MongoDB serialization."""
+    if isinstance(value, np.ndarray):
+        return value.item()
+    if isinstance(value, (np.floating, np.integer)):
+        return value.item()
+    if isinstance(value, list):
+        return [_to_native(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _to_native(v) for k, v in value.items()}
+    return value
 
 # ── Model cache ───────────────────────────────────────────────────────────────
 # WhisperX models are large (~1 GB) and slow to load.
@@ -45,13 +60,13 @@ def _load_whisper():
     global _whisper_model
     if _whisper_model is None:
         # First load: download (if needed) and initialize the model
-        print(f"[Whisper] Loading model '{settings.whisper_model_size}' on {settings.whisper_device} …")
+        print(f"[Whisper] Loading model '{settings.whisper_model_size}' on {settings.whisper_device} ...")
         _whisper_model = whisperx.load_model(
             settings.whisper_model_size,      # e.g. "base", "small", "medium", "large-v2"
             device=settings.whisper_device,   # "cpu" or "cuda" (GPU)
             compute_type=settings.whisper_compute_type,  # "int8" = faster, "float16" = more accurate
         )
-        print("[Whisper] Model loaded ✓")
+        print("[Whisper] Model loaded OK")
     return _whisper_model
 
 
@@ -114,13 +129,13 @@ def _transcribe_sync(audio_path: str) -> Dict[str, Any]:
 
     # If transcript is empty, near-empty (< 3 chars), or just punctuation, treat as no answer
     if not full_transcript or len(full_transcript) < 3 or not any(c.isalnum() for c in full_transcript):
-        return {
+        return _to_native({
             "transcript":       "",
             "words":            [],
             "pauses":           [],
             "hesitation_score": 0.0,
             "language":         language,
-        }
+        })
 
     # ── Step 4: Detect gaps between consecutive words ──────────────────────────
     LONG_PAUSE_THRESHOLD = 2.0  # any gap > 2 seconds counts as a "long pause"
@@ -140,13 +155,13 @@ def _transcribe_sync(audio_path: str) -> Dict[str, Any]:
     # e.g. 0 pauses → 0.0, 3 pauses → 4.5, 7+ pauses → 10.0
     hesitation_score = min(len(pauses) * 1.5, 10.0)
 
-    return {
+    return _to_native({
         "transcript":       full_transcript,
         "words":            words,
         "pauses":           pauses,
         "hesitation_score": round(hesitation_score, 2),
         "language":         language,
-    }
+    })
 
 
 async def transcribe_audio(audio_path: str) -> Dict[str, Any]:

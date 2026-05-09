@@ -1,12 +1,12 @@
 """
 services/scoring_service.py – Score aggregation for interview answers and sessions.
 
-Per-answer score = average of 4 LLM sub-scores + length_bonus:
-  - clarity_score, confidence_score, logic_score, relevance_score (each 0–10)
-  - length_bonus = min(word_count / 200, 1.0) * 0.5  (up to +0.5 for long answers)
-  - floor = 3.0 for non-empty transcripts
+Per-answer score:
+  base_score      = (clarity + confidence + logic + relevance) / 4.0
+  length_bonus    = min(word_count / 200, 1.0) * 0.5   (max +0.5)
+  final_score     = max(3.0, min(10.0, base_score + length_bonus))
 
-Session verdict (final score = average of all answer scores):
+Session verdict (average of all valid per-answer scores, score > 0):
   ≥ 8.0 → Highly Recommended
   ≥ 6.0 → Recommended
   ≥ 4.0 → Average
@@ -20,19 +20,14 @@ from app.models.interview import Answer
 
 def score_single_answer(answer: Answer) -> float:
     """
-    Compute the final score (0–10) for one recorded answer.
+    Compute the final score (0-10) for one recorded answer.
 
-    The score is a weighted average of the 4 LLM sub-scores plus a length bonus:
-      - clarity_score (0–10):    How clearly the candidate expressed their thoughts
-      - confidence_score (0–10): How confident they sounded
-      - logic_score (0–10):      How logical and structured their reasoning was
-      - relevance_score (0–10):  How on-topic and relevant their answer was
-      - length_bonus:            up to +0.5 for answers with 200+ words
+    Formula (per FR-11 and design documentation):
+      base_score     = avg of clarity, confidence, logic, relevance (0-10)
+      length_bonus   = min(word_count / 200, 1.0) * 0.5   (up to +0.5 for long answers)
+      final_score    = max(3.0, min(10.0, base_score + length_bonus))
 
-    Floor = 3.0 (non-empty transcript minimum, per report specification).
-    Ceiling = 10.0.
-
-    If the candidate did not provide an answer (empty transcript), return 0 immediately.
+    If transcript is empty, return 0 immediately.
     """
     transcript = getattr(answer, 'transcript', None) or ""
     if not transcript.strip():
@@ -41,11 +36,13 @@ def score_single_answer(answer: Answer) -> float:
     if not answer.llm_evaluation:
         return 0.0
 
+    llm = answer.llm_evaluation
+
     base_score = (
-        answer.llm_evaluation.clarity_score
-        + answer.llm_evaluation.confidence_score
-        + answer.llm_evaluation.logic_score
-        + answer.llm_evaluation.relevance_score
+        llm.clarity_score
+        + llm.confidence_score
+        + llm.logic_score
+        + llm.relevance_score
     ) / 4.0
 
     word_count = len(transcript.split())
@@ -58,14 +55,20 @@ def score_single_answer(answer: Answer) -> float:
 
 def aggregate_session_score(answers: List[Answer]) -> Dict[str, Any]:
     """
-    Average the per-answer scores across all answers to get the session's final score.
-    Then maps the score to a hiring recommendation category.
+    Average the per-answer scores across all answers (excluding zero scores).
+
+    Session verdict (final score = average of all valid per-answer scores, score > 0):
+      ≥ 8.0 → Highly Recommended
+      ≥ 6.0 → Recommended
+      ≥ 4.0 → Average
+       < 4.0 → Not Recommended
     """
-    if not answers:
+    valid = [a.answer_final_score for a in answers if a.answer_final_score > 0]
+    if not valid:
         return {"final_score": 0.0, "category": "Not Recommended"}
 
-    total = sum(a.answer_final_score for a in answers)
-    final_score = round(total / len(answers), 2)
+    total = sum(valid)
+    final_score = round(total / len(valid), 2)
 
     if final_score >= 8.0:
         category = "Highly Recommended"

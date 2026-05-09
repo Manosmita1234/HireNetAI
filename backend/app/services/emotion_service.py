@@ -59,7 +59,7 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
 
         # Only process every `frame_interval`-th frame (every 5th frame)
         if frame_index % frame_interval == 0:
-            timestamp = frame_index / fps  # time in seconds from the start of the video
+            timestamp = float(frame_index) / float(fps)  # time in seconds from the start of the video
 
             try:
                 # DeepFace.analyze() runs the emotion model on a single frame (numpy array)
@@ -81,9 +81,9 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
                     emotion_totals[emo] = emotion_totals.get(emo, 0.0) + score
 
                 frame_emotions.append({
-                    "timestamp":       round(timestamp, 2),
+                    "timestamp":       round(float(timestamp), 2),
                     "dominant_emotion": dominant,
-                    "emotion_scores":  {k: round(v, 2) for k, v in emotions.items()},
+                    "emotion_scores":  {k: round(float(v), 2) for k, v in emotions.items()},
                 })
             except Exception:
                 # If no face is detected in this frame (e.g. candidate looked away), skip silently
@@ -104,25 +104,25 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
 
     # ── Compute emotion distribution (%) ──────────────────────────────────────
     # total_weight = sum of all raw emotion scores across all frames
-    total_weight = sum(emotion_totals.values())
+    total_weight = float(sum(emotion_totals.values()))
     distribution: Dict[str, float] = {
-        emo: round((score / total_weight) * 100, 2)  # convert to percentage
+        emo: round(float(score) / total_weight * 100, 2)  # convert to percentage
         for emo, score in emotion_totals.items()
     }
 
     # ── Confidence index (0–10) ────────────────────────────────────────────────
     # "Confident" candidates show more happy + neutral expressions.
     # Formula: (happy% + neutral%) / 100 × 10, capped at 10
-    positive = distribution.get("happy", 0) + distribution.get("neutral", 0)
+    positive = float(distribution.get("happy", 0)) + float(distribution.get("neutral", 0))
     confidence_index = round(min(positive / 100 * 10, 10), 2)
 
     # ── Nervousness score (0–10) ───────────────────────────────────────────────
     # "Nervous" candidates show more fear + sad + angry expressions.
     # Formula: (fear% + sad% + angry%) / 100 × 10, capped at 10
     negative = (
-        distribution.get("fear", 0)
-        + distribution.get("sad", 0)
-        + distribution.get("angry", 0)
+        float(distribution.get("fear", 0))
+        + float(distribution.get("sad", 0))
+        + float(distribution.get("angry", 0))
     )
     nervousness_score = round(min(negative / 100 * 10, 10), 2)
 
