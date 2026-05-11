@@ -18,6 +18,7 @@ Why run in a thread pool?
 """
 
 import asyncio
+import os
 from typing import Dict, List, Any
 
 import cv2  # OpenCV: computer vision library for reading video frames
@@ -45,7 +46,7 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
     # FPS = frames per second of the video (usually 25 or 30)
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     # We analyze 1 frame every 5th frame to reduce processing time
-    frame_interval = 5   # analyze every 5th frame
+    frame_interval = 10   # analyze every 10th frame
 
     frame_emotions: List[Dict[str, Any]] = []  # per-frame results
     emotion_totals: Dict[str, float] = {}       # running total of each emotion score across all frames
@@ -57,20 +58,24 @@ def _analyze_frames_sync(video_path: str) -> Dict[str, Any]:
         if not ret:
             break
 
-        # Only process every `frame_interval`-th frame (every 5th frame)
+        # Only process every `frame_interval`-th frame
         if frame_index % frame_interval == 0:
             timestamp = float(frame_index) / float(fps)  # time in seconds from the start of the video
 
             try:
-                # DeepFace.analyze() runs the emotion model on a single frame (numpy array)
-                # enforce_detection=False → don't crash if no face is detected, just skip
-                # silent=True → suppress DeepFace's own print output
-                analysis = DeepFace.analyze(
-                    img_path=frame,
-                    actions=["emotion"],        # only run emotion analysis (skip age, gender, race)
-                    enforce_detection=False,
-                    silent=True,
-                )
+                import tempfile as _tf
+                with _tf.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                    cv2.imwrite(tmp.name, frame)
+                    tmp_path = tmp.name
+                try:
+                    analysis = DeepFace.analyze(
+                        img_path=tmp_path,
+                        actions=["emotion"],
+                        enforce_detection=False,
+                        silent=True,
+                    )
+                finally:
+                    os.unlink(tmp_path)
                 # DeepFace may return a list (one entry per face); we always take the first face
                 result = analysis[0] if isinstance(analysis, list) else analysis
                 emotions: Dict[str, float] = result["emotion"]   # raw scores for each emotion

@@ -12,6 +12,7 @@
     "axios": "^1.7.2",
     "chart.js": "^4.4.3",
     "clsx": "^2.1.1",
+    "face-api.js": "^0.22.2",
     "framer-motion": "^11.2.10",
     "lucide-react": "^0.390.0",
     "react": "^18.3.1",

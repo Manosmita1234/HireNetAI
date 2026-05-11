@@ -3,10 +3,10 @@
  *
  * Features:
  * - Tab switch detection (visibilitychange API)
- * - Face presence check using browser FaceDetector Web API (Chrome/Edge built-in)
+ * - Face presence check using face-api.js (TensorFlow.js-based)
  *   → Detects if candidate actually moved away from camera (not just stream active)
  *   → Also detects multiple faces (potential cheating)
- *   → Falls back to stream-readyState check if FaceDetector is unavailable
+ *   → Works across all modern browsers
  * - Voice activity detection (Web Audio API)
  *
  * All monitoring runs on a single ticker interval to avoid performance overhead.
@@ -14,9 +14,9 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { interviewAPI } from '../services/api'
+import { useFaceApiDetection } from './useFaceApiDetection'
 
 const CHECK_INTERVAL = 2000  // Check every 2 seconds
-const FACE_ABSENT_THRESHOLD = 5     // Seconds before logging face_absent event
 const VOICE_SILENCE_THRESHOLD = 30  // Seconds of silence before logging
 
 // ── Tab Switch Detection ──────────────────────────────────────────────────────
@@ -64,167 +64,8 @@ export function useTabSwitchDetection(sessionId, questionId, enabled = true) {
 
 // ── Face Presence Detection ───────────────────────────────────────────────────
 
-/**
- * Attempts to instantiate the browser's built-in FaceDetector API.
- * Available natively in Chrome 70+ and Edge 79+ (no library needed).
- * Returns null on unsupported browsers (Firefox, Safari).
- */
-function tryCreateFaceDetector() {
-    if (!('FaceDetector' in window)) return null
-    try {
-        return new window.FaceDetector({ fastMode: true, maxDetectedFaces: 5 })
-    } catch {
-        return null
-    }
-}
-
 export function useFaceDetection(videoRef, sessionId, questionId, enabled = true) {
-    // faceStatus: 'present' | 'absent' | 'multiple'
-    const [faceStatus, setFaceStatus] = useState('present')
-    const [faceAbsentSeconds, setFaceAbsentSeconds] = useState(0)
-
-    const faceAbsentSecondsRef = useRef(0)
-    const pendingEventsRef = useRef([])
-    const checkIntervalRef = useRef(null)
-    const detectorRef = useRef(null)   // FaceDetector instance (or null)
-    const canvasRef = useRef(null)   // Off-screen canvas for frame capture
-
-    // Initialise FaceDetector once on mount
-    useEffect(() => {
-        detectorRef.current = tryCreateFaceDetector()
-        if (detectorRef.current) {
-            canvasRef.current = document.createElement('canvas')
-            console.info('[FaceDetection] Using browser FaceDetector API OK')
-        } else {
-            console.warn('[FaceDetection] FaceDetector API not available — using stream fallback')
-        }
-    }, [])
-
-    /**
-     * Core check: runs every CHECK_INTERVAL ms.
-     *
-     * Strategy A (FaceDetector available):
-     *   Draw current video frame to an off-screen canvas → run FaceDetector.detect()
-     *   → 0 faces  → 'absent'
-     *   → 2+ faces → 'multiple'
-     *   → 1 face   → 'present'
-     *
-     * Strategy B (fallback):
-     *   Check video stream readyState (original behavior — detects camera off/covered)
-     */
-    const checkFacePresence = useCallback(async () => {
-        if (!videoRef?.current) return
-        const video = videoRef.current
-
-        // ── Strategy B: fallback (no FaceDetector) ────────────────────────────
-        if (!detectorRef.current || !canvasRef.current) {
-            const isReady = (
-                video.readyState >= 2 &&
-                !video.paused &&
-                video.videoWidth > 0 &&
-                video.videoHeight > 0
-            )
-            if (isReady) {
-                faceAbsentSecondsRef.current = 0
-                setFaceAbsentSeconds(0)
-                setFaceStatus('present')
-            } else {
-                faceAbsentSecondsRef.current += CHECK_INTERVAL / 1000
-                setFaceAbsentSeconds(faceAbsentSecondsRef.current)
-                setFaceStatus('absent')
-            }
-            return
-        }
-
-        // ── Strategy A: FaceDetector API ──────────────────────────────────────
-        // Only detect if video is actively playing
-        if (video.readyState < 2 || video.paused || video.videoWidth === 0) return
-
-        try {
-            // Capture current video frame into the off-screen canvas
-            const canvas = canvasRef.current
-            canvas.width = video.videoWidth
-            canvas.height = video.videoHeight
-            const ctx = canvas.getContext('2d', { willReadFrequently: true })
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-            // Run the face detector on the captured frame
-            const faces = await detectorRef.current.detect(canvas)
-
-            if (faces.length === 0) {
-                // No face detected → candidate moved away
-                faceAbsentSecondsRef.current += CHECK_INTERVAL / 1000
-                setFaceAbsentSeconds(faceAbsentSecondsRef.current)
-                setFaceStatus('absent')
-            } else if (faces.length > 1) {
-                // Multiple faces → possible cheating
-                faceAbsentSecondsRef.current = 0
-                setFaceAbsentSeconds(0)
-                setFaceStatus('multiple')
-            } else {
-                // Exactly one face → all good
-                faceAbsentSecondsRef.current = 0
-                setFaceAbsentSeconds(0)
-                setFaceStatus('present')
-            }
-        } catch (err) {
-            // Detection threw (e.g. browser throttled); skip this tick silently
-            console.debug('[FaceDetection] detect() error (skipped):', err?.message)
-        }
-    }, [videoRef])
-
-    // Start/stop the polling interval
-    useEffect(() => {
-        if (!enabled) return
-        checkFacePresence()
-        checkIntervalRef.current = setInterval(checkFacePresence, CHECK_INTERVAL)
-        return () => clearInterval(checkIntervalRef.current)
-    }, [enabled, checkFacePresence])
-
-    // Log integrity event when face has been absent long enough
-    useEffect(() => {
-        if (!enabled) return
-        if (faceAbsentSecondsRef.current >= FACE_ABSENT_THRESHOLD) {
-            pendingEventsRef.current.push({
-                event_type: 'face_absent',
-                question_id: questionId,
-                timestamp: new Date().toISOString(),
-                duration_seconds: faceAbsentSecondsRef.current,
-                details: `No face detected for ${faceAbsentSecondsRef.current} seconds`,
-            })
-        }
-    }, [
-        enabled,
-        // Only re-run when crossing the threshold (avoids spamming events)
-        faceAbsentSecondsRef.current >= FACE_ABSENT_THRESHOLD
-            ? faceAbsentSecondsRef.current
-            : 0,
-        questionId,
-    ])
-
-    // Log multiple-face event immediately
-    useEffect(() => {
-        if (!enabled || faceStatus !== 'multiple') return
-        pendingEventsRef.current.push({
-            event_type: 'multiple_faces',
-            question_id: questionId,
-            timestamp: new Date().toISOString(),
-            details: 'Multiple faces detected in camera frame',
-        })
-    }, [enabled, faceStatus, questionId])
-
-    const flushEvents = useCallback(async () => {
-        if (pendingEventsRef.current.length > 0 && sessionId) {
-            try {
-                await interviewAPI.recordIntegrityEvents(sessionId, pendingEventsRef.current)
-                pendingEventsRef.current = []
-            } catch (err) {
-                console.error('Failed to record face events:', err)
-            }
-        }
-    }, [sessionId])
-
-    return { faceStatus, faceAbsentSeconds, flushEvents }
+    return useFaceApiDetection(videoRef, sessionId, questionId, enabled)
 }
 
 // ── Voice Activity Detection ──────────────────────────────────────────────────

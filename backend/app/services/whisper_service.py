@@ -120,9 +120,9 @@ def _transcribe_sync(audio_path: str) -> Dict[str, Any]:
         for w in segment.get("words", []):
             words.append({
                 "word":  w.get("word", ""),
-                "start": round(w.get("start", 0.0), 3),  # seconds from start of audio
-                "end":   round(w.get("end",   0.0), 3),
-                "score": round(w.get("score", 1.0), 3),  # confidence score (0–1)
+                "start": round(float(w.get("start", 0.0)), 3),
+                "end":   round(float(w.get("end",   0.0)), 3),
+                "score": round(float(w.get("score", 1.0)), 3),
             })
 
     full_transcript = " ".join(full_transcript_parts).strip()  # join all sentence-level text

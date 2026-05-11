@@ -29,7 +29,7 @@ export default function LoginPage() {
             toast.success(`Welcome back, ${data.full_name}!`)
             navigate(data.role === 'admin' ? '/admin/dashboard' : '/candidate/dashboard')
         } catch (err) {
-            toast.error(err.response?.data?.detail || 'Login failed. Check your credentials.')
+            toast.error('Wrong credentials. Please check your email and password.')
         } finally {
             setLoading(false)
         }

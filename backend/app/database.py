@@ -15,13 +15,15 @@ _client: AsyncIOMotorClient | None = None
 async def connect_db() -> None:
     """Create the Motor client and attach it to this module."""
     global _client
-    _client = AsyncIOMotorClient(settings.mongodb_url)
+    _client = AsyncIOMotorClient(
+        settings.mongodb_url,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+    )
     try:
-        # Trigger a lightweight command to verify connectivity
         await _client.admin.command("ping")
         print("[DB] Connected to MongoDB OK")
     except Exception as e:
-        # Non-fatal: warn but keep the client so connections are retried per-request
         print(f"[DB] WARNING: Could not ping MongoDB: {e}")
         print("[DB] Ensure MongoDB is running on:", settings.mongodb_url)
 
