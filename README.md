@@ -3,6 +3,8 @@
 A fully featured AI-driven video interview system analyzing **speech**, **emotion**, **personality traits**, and **communication skills** using cutting-edge ML models.
 
 ---
+## hosted: https://hire-net-ai-git-master-manosmita1234s-projects.vercel.app
+[watch the screen Recording Demo] (https://drive.google.com/file/d/1tyzVWvPwLlREXs9sC1m2SuNcrODaVuJR/view?usp=drive_link)
 
 ## 🏗️ Architecture Overview
 
