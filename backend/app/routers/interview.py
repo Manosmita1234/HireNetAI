@@ -265,3 +265,81 @@ async def my_sessions(
         doc = mongo_doc_to_dict(doc)
         sessions.append(doc)
     return {"sessions": sessions}
+
+
+@router.post("/session/{session_id}/start-adaptive")
+async def start_adaptive_interview(
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """
+    Initialize adaptive difficulty mode for a session and return the first question.
+    Use this instead of get_session_questions when running an adaptive interview.
+    """
+    from app.services.adaptive_difficulty_service import initialize_session_adaptive
+
+    doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if doc["candidate_id"] != current_user["sub"] and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    result = await initialize_session_adaptive(session_id, db)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+
+    return result
+
+
+@router.post("/session/{session_id}/next-question")
+async def get_adaptive_next_question(
+    session_id: str,
+    answer_data: dict,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """
+    Get the next question with adaptive difficulty based on performance signals.
+
+    Performance signals from frontend:
+      - response_duration_seconds: how long the video answer is
+      - expected_duration_seconds: expected duration for this question
+      - hesitations: number of pauses detected (optional)
+      - previous_difficulty: difficulty of the previous question (optional)
+    """
+    from app.services.adaptive_difficulty_service import (
+        compute_answer_signal,
+        get_next_question,
+    )
+
+    doc = await db["sessions"].find_one({"_id": ObjectId(session_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if doc["candidate_id"] != current_user["sub"] and current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    response_duration = answer_data.get("response_duration_seconds", 0)
+    expected_duration = answer_data.get("expected_duration_seconds", 120)
+    hesitations = answer_data.get("hesitations", 0)
+    previous_difficulty = answer_data.get("previous_difficulty")
+
+    performance_delta = compute_answer_signal(
+        response_duration_seconds=response_duration,
+        expected_duration_seconds=expected_duration,
+        hesitations=hesitations,
+    )
+
+    result = await get_next_question(
+        session_id=session_id,
+        db=db,
+        performance_delta=performance_delta,
+        previous_difficulty=previous_difficulty,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+
+    return result

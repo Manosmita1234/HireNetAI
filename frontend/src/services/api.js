@@ -92,6 +92,14 @@ export const interviewAPI = {
     // POST /interview/session/:id/integrity-events → batch record integrity events
     recordIntegrityEvents: (sessionId, eventsData) =>
         api.post(`/interview/session/${sessionId}/integrity-events`, eventsData),
+
+    // POST /interview/session/:id/start-adaptive → initialize adaptive mode, get first question
+    startAdaptiveInterview: (sessionId) =>
+        api.post(`/interview/session/${sessionId}/start-adaptive`),
+
+    // POST /interview/session/:id/next-question → get next question with adaptive difficulty
+    getNextQuestion: (sessionId, answerData) =>
+        api.post(`/interview/session/${sessionId}/next-question`, answerData),
 }
 
 

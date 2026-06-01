@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { interviewAPI, uploadAPI } from '../services/api'
 import { useIntegrityMonitoring } from '../hooks/useIntegrityMonitoring'
+import { useTextToSpeech } from '../hooks/useTextToSpeech'
 
 const STATUS = {
     LOADING: 'loading',
@@ -32,8 +33,6 @@ export default function InterviewRoom() {
     const { sessionId } = useParams()
     const navigate = useNavigate()
 
-    const [questions, setQuestions] = useState([])
-    const [currentIdx, setCurrentIdx] = useState(0)
     const [interviewStatus, setInterviewStatus] = useState(STATUS.LOADING)
     const [recordStatus, setRecordStatus] = useState(STATUS.IDLE)
     const [timer, setTimer] = useState(0)
@@ -41,6 +40,13 @@ export default function InterviewRoom() {
     const [isFullscreen, setIsFullscreen] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [timeWarning, setTimeWarning] = useState(false)
+    const [ttsEnabled, setTtsEnabled] = useState(true)
+    const [currentQuestion, setCurrentQuestion] = useState(null)
+    const [adaptiveScore, setAdaptiveScore] = useState(0)
+    const [targetDifficulty, setTargetDifficulty] = useState('medium')
+    const [totalAnswered, setTotalAnswered] = useState(0)
+    const [isDone, setIsDone] = useState(false)
+    const [questionHistory, setQuestionHistory] = useState([])
 
     const videoRef = useRef(null)
     const mediaRecorderRef = useRef(null)
@@ -59,9 +65,18 @@ export default function InterviewRoom() {
         videoRef,
         streamRef,
         sessionId,
-        questions[currentIdx]?.id,
+        currentQuestion?.id,
         isRecording
     )
+
+    const { speak, stop } = useTextToSpeech()
+
+    useEffect(() => {
+        if (ttsEnabled && currentQuestion?.text) {
+            speak(currentQuestion.text)
+        }
+        return () => stop()
+    }, [currentQuestion, ttsEnabled, speak, stop])
 
     useEffect(() => {
         let cancelled = false
@@ -95,10 +110,17 @@ export default function InterviewRoom() {
             }
         }
 
-        interviewAPI.getSessionQuestions(sessionId)
+        interviewAPI.startAdaptiveInterview(sessionId)
             .then(({ data }) => {
                 if (cancelled) return
-                setQuestions(data.questions || [])
+                if (data.done) {
+                    setIsDone(true)
+                    setInterviewStatus(STATUS.COMPLETE)
+                    return
+                }
+                setCurrentQuestion(data.question)
+                setAdaptiveScore(data.cumulative_score || 0)
+                setTargetDifficulty(data.target_difficulty || 'medium')
                 setInterviewStatus(STATUS.IDLE)
                 if (streamRef.current && videoRef.current && !videoRef.current.srcObject) {
                     videoRef.current.srcObject = streamRef.current
@@ -197,8 +219,7 @@ export default function InterviewRoom() {
 
     const uploadAnswer = useCallback(async () => {
         if (chunksRef.current.length === 0) { toast.error('No video recorded'); return }
-        const question = questions[currentIdx]
-        if (!question) return
+        if (!currentQuestion) return
 
         await flushAllEvents()
         setRecordStatus(STATUS.UPLOADING)
@@ -207,9 +228,9 @@ export default function InterviewRoom() {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' })
         const fd = new FormData()
         fd.append('session_id', sessionId)
-        fd.append('question_id', question.id)
-        fd.append('question_text', question.text)
-        fd.append('video', blob, `answer_${question.id}.webm`)
+        fd.append('question_id', currentQuestion.id)
+        fd.append('question_text', currentQuestion.text)
+        fd.append('video', blob, `answer_${currentQuestion.id}.webm`)
 
         const progressInterval = setInterval(() => {
             setUploadProgress(prev => Math.min(prev + 15, 90))
@@ -221,12 +242,13 @@ export default function InterviewRoom() {
             setUploadProgress(100)
             toast.success('Answer saved!')
             setRecordStatus(STATUS.UPLOADED)
+            setTotalAnswered(prev => prev + 1)
         } catch (err) {
             clearInterval(progressInterval)
             toast.error('Upload failed. Please try again.')
             setRecordStatus(STATUS.RECORDED)
         }
-    }, [questions, currentIdx, sessionId, flushAllEvents])
+    }, [currentQuestion, sessionId, flushAllEvents])
 
     // Auto-upload as soon as recording stops (STATUS.RECORDED).
     // Without this, the status stays RECORDED forever and the
@@ -237,13 +259,33 @@ export default function InterviewRoom() {
         }
     }, [recordStatus, uploadAnswer])
 
-    const nextQuestion = () => {
+    const nextQuestion = async () => {
         setRecordStatus(STATUS.IDLE)
         setTimer(0)
         setUploadProgress(0)
         setTimeWarning(false)
         chunksRef.current = []
-        setCurrentIdx(i => i + 1)
+
+        try {
+            const { data } = await interviewAPI.getNextQuestion(sessionId, {
+                response_duration_seconds: timer,
+                expected_duration_seconds: currentQuestion?.expected_duration_seconds || 120,
+                previous_difficulty: currentQuestion?.difficulty,
+            })
+
+            if (data.done) {
+                setIsDone(true)
+                setInterviewStatus(STATUS.COMPLETE)
+                return
+            }
+
+            setCurrentQuestion(data.question)
+            setAdaptiveScore(data.cumulative_score || 0)
+            setTargetDifficulty(data.target_difficulty || 'medium')
+            setQuestionHistory(prev => [...prev, currentQuestion])
+        } catch (err) {
+            toast.error('Failed to load next question')
+        }
     }
 
     const completeInterview = async () => {
@@ -276,10 +318,7 @@ export default function InterviewRoom() {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
     }, [])
 
-    const isLastQuestion = currentIdx >= questions.length - 1
-    const currentQuestion = questions[currentIdx]
-
-    if (questions.length === 0) {
+    if (!currentQuestion && !isDone) {
         return (
             <div className="min-h-screen bg-slate-50 flex items-center justify-center">
                 <div className="w-10 h-10 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
@@ -340,23 +379,23 @@ export default function InterviewRoom() {
                             </div>
                             <div>
                                 <h1 className="font-semibold text-slate-800">AI Interview</h1>
-                                <p className="text-xs text-slate-400">{questions.length} Questions</p>
+                                <p className="text-xs text-slate-400">5 Questions • Adaptive</p>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-4">
                             <div className="text-right">
                                 <p className="text-sm font-medium text-slate-700">
-                                    Question {Math.min(currentIdx + 1, questions.length)} of {questions.length}
+                                    Question {totalAnswered + 1}
                                 </p>
                                 <p className="text-xs text-slate-400">
-                                    {currentIdx} completed
+                                    {totalAnswered} answered
                                 </p>
                             </div>
                             <div className="w-40 h-2 bg-slate-200 rounded-full overflow-hidden">
                                 <motion.div
                                     initial={{ width: 0 }}
-                                    animate={{ width: `${((currentIdx) / questions.length) * 100}%` }}
+                                    animate={{ width: `${Math.min((totalAnswered / 5) * 100, 100)}%` }}
                                     className="h-full bg-blue-500 rounded-full"
                                 />
                             </div>
@@ -480,7 +519,7 @@ export default function InterviewRoom() {
                     <div className="lg:col-span-2">
                         <AnimatePresence mode="wait">
                             <motion.div
-                                key={currentIdx}
+                                key={currentQuestion?.id || 'question'}
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -20 }}
@@ -494,7 +533,20 @@ export default function InterviewRoom() {
                                     <span className="text-xs text-slate-400 capitalize">• {currentQuestion?.difficulty}</span>
                                 </div>
 
-                                <p className="text-slate-400 text-sm mb-2">Question {currentIdx + 1}</p>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-slate-400 text-sm">Question {totalAnswered + 1}</p>
+                                    <button
+                                        onClick={() => setTtsEnabled(!ttsEnabled)}
+                                        className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                                        title={ttsEnabled ? 'Disable question voice' : 'Enable question voice'}
+                                    >
+                                        {ttsEnabled ? (
+                                            <Volume2 className="w-4 h-4 text-slate-500" />
+                                        ) : (
+                                            <VolumeX className="w-4 h-4 text-slate-300" />
+                                        )}
+                                    </button>
+                                </div>
                                 <h2 className="text-xl font-semibold leading-relaxed text-slate-800 mb-6">
                                     {currentQuestion?.text}
                                 </h2>
@@ -550,7 +602,7 @@ export default function InterviewRoom() {
 
                                 {recordStatus === STATUS.UPLOADED && (
                                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                                        {isLastQuestion ? (
+                                        {isDone ? (
                                             <button onClick={completeInterview} disabled={completing}
                                                 className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl transition-colors">
                                                 {completing ? (
@@ -570,15 +622,23 @@ export default function InterviewRoom() {
                             </motion.div>
                         </AnimatePresence>
 
-                        {/* Question Dots */}
-                        <div className="flex gap-2 mt-4 justify-center flex-wrap">
-                            {questions.map((_, i) => (
-                                <div key={i} className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
-                                    i < currentIdx ? 'bg-green-400'
-                                    : i === currentIdx ? 'bg-blue-500 scale-125'
-                                    : 'bg-slate-300'
-                                }`} />
-                            ))}
+                        {/* Adaptive Progress Indicator */}
+                        <div className="flex items-center justify-between mt-4 px-2">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-400">Answered: {totalAnswered}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    targetDifficulty === 'easy' ? 'bg-emerald-50 text-emerald-600' :
+                                    targetDifficulty === 'hard' ? 'bg-red-50 text-red-600' :
+                                    'bg-yellow-50 text-yellow-600'
+                                }`}>
+                                    {targetDifficulty.charAt(0).toUpperCase() + targetDifficulty.slice(1)}
+                                </span>
+                                <span className="text-xs text-slate-400">
+                                    Score: {adaptiveScore > 0 ? '+' : ''}{adaptiveScore}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>

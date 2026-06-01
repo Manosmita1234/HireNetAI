@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
-import { Brain, Users, LogOut, Eye, Trash2, Database, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { Brain, Users, LogOut, Eye, Trash2, Database, Search, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react'
 import { adminAPI } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -100,6 +100,8 @@ export default function AdminDashboard() {
         ['Highly Recommended', 'Recommended'].includes(c.category)
     ).length
 
+    const flaggedCount = candidates.filter(c => c.has_integrity_issues).length
+
     return (
         <div className="min-h-screen bg-slate-50">
 
@@ -131,6 +133,7 @@ export default function AdminDashboard() {
                     {[
                         { label: 'Total Candidates', value: candidates.length, icon: Users },
                         { label: 'Recommended',      value: recommended,       icon: ChevronUp },
+                        { label: 'Flagged',         value: flaggedCount,       icon: AlertTriangle },
                     ].map((s, i) => (
                         <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
                             className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
@@ -197,8 +200,13 @@ export default function AdminDashboard() {
                                             {c.category || '—'}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3">
+<td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
+                                            {c.has_integrity_issues && (
+                                                <span title="Integrity issues detected" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                                                    <AlertTriangle className="w-3 h-3" /> Flag
+                                                </span>
+                                            )}
                                             <Link to={`/admin/candidate/${c.session_id}`}
                                                 className="p-2 rounded-lg hover:bg-blue-50 transition-colors text-slate-400 hover:text-blue-600">
                                                 <Eye className="w-4 h-4" />

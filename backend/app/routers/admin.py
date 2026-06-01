@@ -48,6 +48,11 @@ async def list_candidates(
     results = []
     async for doc in cursor:
         doc = mongo_doc_to_dict(doc)  # convert _id → id
+        event_counts = {"tab_switch": 0, "face_absent": 0, "no_voice": 0, "multiple_faces": 0}
+        for evt in doc.get("integrity_events", []):
+            if evt.get("event_type") in event_counts:
+                event_counts[evt.get("event_type")] += 1
+
         results.append({
             "session_id":      doc["id"],
             "candidate_id":    doc.get("candidate_id"),
@@ -57,7 +62,12 @@ async def list_candidates(
             "final_score":     doc.get("final_score", 0),
             "category":        doc.get("category", "Not Recommended"),
             "started_at":      str(doc.get("started_at", "")),
-            "answer_count":    len(doc.get("answers", [])),  # count answers without returning them
+            "answer_count":    len(doc.get("answers", [])),
+            "tab_switch_count":     event_counts["tab_switch"],
+            "face_absent_count":     event_counts["face_absent"],
+            "multiple_faces_count":  event_counts["multiple_faces"],
+            "no_voice_count":        event_counts["no_voice"],
+            "has_integrity_issues":  any(v > 0 for v in event_counts.values()),
         })
     return {"candidates": results}
 
